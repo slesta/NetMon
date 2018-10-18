@@ -24,7 +24,7 @@ def create_netobject(ipaddr):
     return IpObject(ip=ipaddr, config=config)
 
 
-adr_list = map(str, ipcalc.Network('10.60.60.0/24'))
+adr_list = map(str, ipcalc.Network('10.60.60.0/19'))
 
 # make the Pool of workers
 pool = ThreadPool(125)

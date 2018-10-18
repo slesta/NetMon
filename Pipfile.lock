@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "2412d80e05e91f07468caa653b48854e998d07701df1f4a3439dedc340b25de6"
+            "sha256": "39b0a9053f514a7c65913aac69037ce3a95688bcb5f7780c7c4321c71307b6a5"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -65,7 +65,6 @@
                 "sha256:edabd457cd23a02965166026fd9bfd196f4324fe6032e866d0f3bd0301cd486f",
                 "sha256:fdf1c1dc5bafc32bc5d08b054f94d659422b05aba244d6be4ddc1c72d9aa70fb"
             ],
-            "markers": "python_version >= '2.7' and python_version != '3.1.*' and python_version != '3.0.*' and python_version != '3.2.*' and python_version != '3.3.*'",
             "version": "==1.11.5"
         },
         "cryptography": {
@@ -113,6 +112,14 @@
             "index": "pypi",
             "version": "==1.99.0"
         },
+        "paramiko": {
+            "hashes": [
+                "sha256:51c083d3467aac21e2afcb188f81439b38eeff3eec5e19a63d0689785a2cb7bf",
+                "sha256:efd7305f882ef5432453630cfb8297abc4e03a20a44d8983b0fb900a7bb08bdc"
+            ],
+            "index": "pypi",
+            "version": "==2.1.6"
+        },
         "pipenv": {
             "hashes": [
                 "sha256:28d6915ba58566f1192cda1a6674fe3c0c42cf76c5354c8e47deff94bcd1db5c",
@@ -121,6 +128,13 @@
             ],
             "index": "pypi",
             "version": "==2018.6.25"
+        },
+        "pyasn1": {
+            "hashes": [
+                "sha256:b9d3abc5031e61927c82d4d96c1cec1e55676c1a991623cfed28faea73cdd7ca",
+                "sha256:f58f2a3d12fd754aa123e9fa74fb7345333000a035f3921dbdaa08597aa53137"
+            ],
+            "version": "==0.4.4"
         },
         "pycparser": {
             "hashes": [
@@ -162,14 +176,12 @@
                 "sha256:2ce32cd126117ce2c539f0134eb89de91a8413a29baac49cbab3eb50e2026669",
                 "sha256:ca07b4c0b54e14a91af9f34d0919790b016923d157afda5efdde55c96718f752"
             ],
-            "markers": "python_version != '3.0.*' and python_version >= '2.7' and python_version != '3.1.*' and python_version != '3.2.*'",
             "version": "==16.0.0"
         },
         "virtualenv-clone": {
             "hashes": [
                 "sha256:afce268508aa5596c90dda234abe345deebc401a57d287bcbd76baa140a1aa58"
             ],
-            "markers": "python_version != '3.0.*' and python_version >= '2.7' and python_version != '3.1.*' and python_version != '3.2.*' and python_version != '3.3.*'",
             "version": "==0.4.0"
         }
     },
