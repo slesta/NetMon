@@ -5,16 +5,16 @@ from multiprocessing.dummy import Pool as ThreadPool
 from netobjects import IpObject
 import json
 
-
+# Nalouduje konfiguraci ze souboru, jsou tam treba definice pro identifikaci ruznych sitovych zarizeni
 with open('config.json') as json_data_file:
     config = json.load(json_data_file)
 
-
+# Ulozi objekt
 def save_object(object_to_save, filename):
     with open(filename, 'wb') as output:  # prepise soubor
         pickle.dump(object_to_save, output, pickle.HIGHEST_PROTOCOL)
 
-
+# Nacte objekt
 def load_object(filename):
     with open(filename, 'rb') as input_file:
         return pickle.load(input_file)
@@ -26,21 +26,20 @@ def create_netobject(ipaddr):
 
 adr_list = map(str, ipcalc.Network('10.60.60.0/19'))
 
-# make the Pool of workers
+# Vytvori pool o danem poctu vlaken
 pool = ThreadPool(125)
 
-# open the urls in their own threads
-# and return the results
+# Vytvori IP objekty z daneho seznamu adres a nacpe to do listu
 n_obj_list = pool.map(create_netobject, adr_list)
 
-# close the pool and wait for the work to finish
+# Udelame poradek
 pool.close()
 pool.join()
 
 save_object(n_obj_list, 'n_obj_list.pkl')
-n_obj_list1 = load_object('n_obj_list.pkl')
+n_obj_list = load_object('n_obj_list.pkl')
 print('-------------------------------------------------------------------------------------------------')
-for obj in n_obj_list1:
+for obj in n_obj_list:
     # obj.detect_device()
     if obj.active:
         print('IP: {} \tOS: {} \tDev: {} \tOS-info: {} \tDev-info: {}'.format(obj.ip, obj.os, obj.device,

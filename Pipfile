@@ -12,8 +12,10 @@ ipcalc = "*"
 six = "*"
 pytraceroute = "*"
 scapy = "*"
-cryptography = "*"
+netmiko = "==2.1.1"
 paramiko = "==2.1.6"
+netdev = "*"
+requests = "*"
 
 [requires]
 python_version = "3.6"

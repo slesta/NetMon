@@ -110,7 +110,7 @@ class IpObject:
                 for portup in self.active_ports:
                     if portup.port == condition['port_num']:
                         if condition['contain'] in vars(portup)[condition['item']]:  # kontrola shody podminky
-                            conditions_result = conditions_result + 1
+                            conditions_result += 1
             if conditions_result == len(detect['conditions']):  # pokud byly shodne vsechny, tak zapise vysledek
                 if detect['result']['os']:
                     self.os = detect['result']['os']
@@ -130,3 +130,169 @@ class IpObject:
                                 self.device_info = vars(p)[detect['result']['dev_info']]
                     else:
                         self.device_info = detect['result']['dev_info']
+
+
+class Device:
+
+    def __init__(self):
+        self.hostname = None
+        self.uid = None
+        self.firmware = None
+        self.model = None
+        self.manufacturer = None
+        self.category = None
+        self.interface = {}
+        self.bridge = {}
+
+    def __str__(self):
+        return self.hostname + ' - ' + self.model
+
+    def add_interface(self, objectitem):
+        self.interface[str(objectitem)] = objectitem
+
+    def add_bridge(self, objectitem):
+        self.bridge[str(objectitem)] = objectitem
+
+    def print(self):
+        print('####################################################################################################')
+        print('|==== Hostname: {}'.format(self.hostname))
+        print('|==== Model: {}, Manufacturer: {}, Firmware: {}, Uid: {}'.format(
+            self.model, self.manufacturer, self.firmware, self.uid))
+        # print('Interfaces: {}'.format(', '.join(self.interface.keys())))
+        for item in self.interface.keys():
+            self.interface[item].print()
+        if len(self.bridge):
+            for item in self.bridge.keys():
+                self.bridge[item].print()
+
+
+class Interface:
+
+    def __init__(self):
+        self.name = None
+        self.mac = None
+        self.mtu = None
+        self.state = None
+        self.ip = {}
+        self.route = {}
+        self.wireless = {}
+        self.arp = {}
+
+    def __str__(self):
+        return self.name
+
+    def add_ip(self, objectitem):
+        self.ip[str(objectitem)] = objectitem
+
+    def add_route(self, objectitem):
+        self.route[str(objectitem)] = objectitem
+
+    def add_wireless(self, objectitem):
+        self.wireless[str(objectitem)] = objectitem
+
+    def add_arp(self, objectitem):
+        self.arp[str(objectitem)] = objectitem
+
+    def print(self):
+        # print('----------------------------------------------------------------------------------------------------')
+        print('|  ')
+        print('|-{}'.format(self.name))
+        print('|  |-MAC: {}  MTU: {}  State: {}'.format(self.mac, self.mtu, self.state))
+
+        if len(self.ip):
+            print('|  |')
+            print('|  |-IP:')
+            for item in self.ip.keys():
+                self.ip[item].print()
+
+        if len(self.route):
+            print('|  |')
+            print('|  |-Route:')
+            for item in self.route.keys():
+                self.route[item].print()
+
+        if len(self.wireless):
+            print('|  |')
+            print('|  |-Wireless:')
+            for item in self.wireless.keys():
+                self.wireless[item].print()
+
+        if len(self.arp):
+            print('|  |')
+            print('|  |-Arp:')
+            for item in self.arp.keys():
+                self.arp[item].print()
+
+
+class Bridge:
+
+    def __init__(self):
+        self.bridge = Interface
+        self.interface = {}
+
+    def __str__(self):
+        return str(self.bridge)
+
+    def add_interface(self, objectitem):
+        self.interface[str(objectitem)] = objectitem
+
+    def print(self):
+        print('|  ')
+        print('|--Bridge: {}'.format(self.bridge))
+        print('|  |-Interfaces: {}'.format(', '.join(self.interface.keys())))
+
+
+class Ip:
+
+    def __init__(self):
+        self.ip = None
+        self.mask = None
+        self.brd = None
+
+    def __str__(self):
+        return self.ip
+
+    def print(self):
+        print('|  |  |-{}/{} brd {}'.format(self.ip, self.mask, self.brd))
+
+
+class Route:
+
+    def __init__(self):
+        self.net = None
+        self.gw = None
+
+    def __str__(self):
+        return self.net
+
+    def print(self):
+        print('|  |  |-{} gateway {}'.format(self.net, self.gw))
+
+
+class Wireless:
+
+    def __init__(self):
+        self.essid = None
+        self.mode = None
+        self.frequency = None
+        self.band = None
+
+    def __str__(self):
+        return self.essid
+
+    def print(self):
+        print('|  |  |-{} mode: {}  frequency: {}  band: {}'.format(self.essid, self.mode, self.frequency, self.band))
+
+
+class Arp:
+
+    def __init__(self):
+        self.ip = None
+        self.mac = None
+        self.manufacturer = None
+
+    def __str__(self):
+        return self.ip
+
+    def print(self):
+        print('|     |-{}  \tMAC: {}  Manufacturer: {}'.format(self.ip, self.mac, self.manufacturer))
