@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>NetMon</title>
+    <style type="text/css">
+        #container {
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            position: absolute;
+            background-color: #455660;
+        }
+
+        #control-pane {
+            top: 10px;
+            /*bottom: 10px;*/
+            right: 10px;
+            position: absolute;
+            width: 230px;
+            background-color: rgb(249, 247, 237);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        #control-pane > div {
+            margin: 10px;
+            overflow-x: auto;
+        }
+
+        .line {
+            clear: both;
+            display: block;
+            width: 100%;
+            margin: 0;
+            padding: 12px 0 0 0;
+            border-bottom: 1px solid #aac789;
+            background: transparent;
+        }
+
+        h2, h3, h4 {
+            padding: 0;
+            font-variant: small-caps;
+        }
+
+        .green {
+            color: #437356;
+        }
+
+        h2.underline {
+            color: #437356;
+            background: #f4f0e4;
+            margin: 0;
+            border-radius: 2px;
+            padding: 8px 12px;
+            font-weight: 700;
+        }
+
+        .hidden {
+            display: none;
+            visibility: hidden;
+        }
+
+        input[type=range] {
+            width: 160px;
+        }
+    </style>
+
+
+    <script src="js/src/sigma.core.js"></script>
+    <script src="js/src/conrad.js"></script>
+    <script src="js/src/utils/sigma.utils.js"></script>
+    <script src="js/src/utils/sigma.polyfills.js"></script>
+    <script src="js/src/sigma.settings.js"></script>
+    <script src="js/src/classes/sigma.classes.dispatcher.js"></script>
+    <script src="js/src/classes/sigma.classes.configurable.js"></script>
+    <script src="js/src/classes/sigma.classes.graph.js"></script>
+    <script src="js/src/classes/sigma.classes.camera.js"></script>
+    <script src="js/src/classes/sigma.classes.quad.js"></script>
+    <script src="js/src/classes/sigma.classes.edgequad.js"></script>
+    <script src="js/src/captors/sigma.captors.mouse.js"></script>
+    <script src="js/src/captors/sigma.captors.touch.js"></script>
+    <script src="js/src/renderers/sigma.renderers.canvas.js"></script>
+    <script src="js/src/renderers/sigma.renderers.webgl.js"></script>
+    <script src="js/src/renderers/sigma.renderers.svg.js"></script>
+    <script src="js/src/renderers/sigma.renderers.def.js"></script>
+    <script src="js/src/renderers/webgl/sigma.webgl.nodes.def.js"></script>
+    <script src="js/src/renderers/webgl/sigma.webgl.nodes.fast.js"></script>
+    <script src="js/src/renderers/webgl/sigma.webgl.edges.def.js"></script>
+    <script src="js/src/renderers/webgl/sigma.webgl.edges.fast.js"></script>
+    <script src="js/src/renderers/webgl/sigma.webgl.edges.arrow.js"></script>
+    <script src="js/src/renderers/canvas/sigma.canvas.labels.def.js"></script>
+    <script src="js/src/renderers/canvas/sigma.canvas.hovers.def.js"></script>
+    <script src="js/src/renderers/canvas/sigma.canvas.nodes.def.js"></script>
+    <script src="js/src/renderers/canvas/sigma.canvas.edges.def.js"></script>
+    <script src="js/src/renderers/canvas/sigma.canvas.edges.curve.js"></script>
+    <script src="js/src/renderers/canvas/sigma.canvas.edges.arrow.js"></script>
+    <script src="js/src/renderers/canvas/sigma.canvas.edges.curvedArrow.js"></script>
+    <script src="js/src/renderers/canvas/sigma.canvas.edgehovers.def.js"></script>
+    <script src="js/src/renderers/canvas/sigma.canvas.edgehovers.curve.js"></script>
+    <script src="js/src/renderers/canvas/sigma.canvas.edgehovers.arrow.js"></script>
+    <script src="js/src/renderers/canvas/sigma.canvas.edgehovers.curvedArrow.js"></script>
+    <script src="js/src/renderers/canvas/sigma.canvas.extremities.def.js"></script>
+    <script src="js/src/renderers/svg/sigma.svg.utils.js"></script>
+    <script src="js/src/renderers/svg/sigma.svg.nodes.def.js"></script>
+    <script src="js/src/renderers/svg/sigma.svg.edges.def.js"></script>
+    <script src="js/src/renderers/svg/sigma.svg.edges.curve.js"></script>
+    <script src="js/src/renderers/svg/sigma.svg.labels.def.js"></script>
+    <script src="js/src/renderers/svg/sigma.svg.hovers.def.js"></script>
+    <script src="js/src/middlewares/sigma.middlewares.rescale.js"></script>
+    <script src="js/src/middlewares/sigma.middlewares.copy.js"></script>
+    <script src="js/src/misc/sigma.misc.animation.js"></script>
+    <script src="js/src/misc/sigma.misc.bindEvents.js"></script>
+    <script src="js/src/misc/sigma.misc.bindDOMEvents.js"></script>
+    <script src="js/src/misc/sigma.misc.drawHovers.js"></script>
+    <script src="js/require.js"></script>
+
+    <script src="js/jquery-3.3.1.min.js"></script>
+</head>
+<body>
+
+<div id="container">
+    <style>
+        body {
+            color: #333;
+            font-size: 14px;
+            font-family: Lato, sans-serif;
+        }
+
+        #graph-container {
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            position: absolute;
+        }
+
+        #control-pane {
+            top: 10px;
+            bottom: 10px;
+            right: 10px;
+            position: absolute;
+            width: 385px;
+            background-color: rgb(249, 247, 237);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            /*overflow: auto;*/
+
+        }
+
+        #dev-info {
+            /*top: 150px;*/
+            /*bottom: 100px;*/
+            right: 10px;
+            left: 9px;
+            position: relative;
+            /*position: absolute;*/
+            /*width: 385px;*/
+            width: 95%;
+            height: 85%;
+            /*background-color: rgb(249, 247, 237);*/
+            /*box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);*/
+            overflow-x: auto;
+
+        }
+
+        #control-pane > div {
+            margin: 10px;
+            overflow-x: auto;
+        }
+
+        .line {
+            clear: both;
+            display: block;
+            width: 100%;
+            margin: 0;
+            padding: 12px 0 0 0;
+            border-bottom: 1px solid #aac789;
+            background: transparent;
+        }
+
+        h2, h3, h4 {
+            padding: 0;
+            font-variant: small-caps;
+        }
+
+        .green {
+            color: #437356;
+        }
+
+        h2.underline {
+            color: #437356;
+            background: #f4f0e4;
+            margin: 0;
+            border-radius: 2px;
+            padding: 8px 12px;
+            font-weight: 700;
+        }
+
+        .hidden {
+            display: none;
+            visibility: hidden;
+        }
+
+        input[type=range] {
+            width: 160px;
+        }
+    </style>
+    <div id="graph-container"></div>
+    <div id="control-pane">
+        <h2 class="underline">Control panel</h2>
+        <div>
+            <h3>Connection category</h3>
+            <select id="node-category" title="Route category">
+                <option value="" selected>All categories</option>
+            </select>
+            <input id="show-edge-labels" type="checkbox" name="edgelabels" value="show" title="Show labels" checked>
+            show edge labels
+        </div>
+        <div id="dev-info">
+            <h3>Device details</h3>
+            <div id="node-detail"></div>
+        </div>
+
+    </div>
+</div>
+
+<script src="js/plugins/sigma.parsers.json.min.js"></script>
+<script src="js/plugins/sigma.renderers.edgeLabels.min.js"></script>
+<script src="js/plugins/sigma.plugins.filter.min.js"></script>
+<script src="js/plugins/sigma.renderers.parallelEdges.min.js"></script>
+<script src="js/plugins/sigma.renderers.customEdgeShapes.min.js"></script>
+
+
+<script>
+
+    var dev_dict;
+    sigma.renderers.def = sigma.renderers.canvas;
+    $.getJSON("device_data.json", function (json) {
+        dev_dict = json;
+    });
+
+
+    sigma.parsers.json('data.json', {
+            container: 'graph-container',
+            type: 'canvas',
+            settings: {
+                defaultNodeColor: '#ec5148',
+                edgeColor: 'default',
+                defaultEdgeColor: '#000',
+                drawLabels: true,
+                defaultLabelSize: 10,
+                defaultLabelColor: '#c0bf0a',
+                labelThreshold: 5,
+                drawEdgeLabels: true,
+                // edgeLabelSize: 'proportional',
+                // edgeLabelSize: 'fixed',
+                // defaultEdgeArrow: 'target',
+
+            },
+
+
+        },
+        function (s) {
+            console.log(s.graph.nodes());
+            console.log(s.graph.edges());
+
+            // Initialize the Filter API
+            filter = new sigma.plugins.filter(s);
+
+            var categories = {};
+
+            // vytvori seznam kategorii
+            s.graph.edges().forEach(function (ed) {
+                categories[ed.category] = true;
+            });
+
+
+            // Vytvori kategorie v selectu
+            var nodecategoryElt = document.getElementById('node-category');
+            Object.keys(categories).forEach(function (c) {
+                var optionElt = document.createElement("option");
+                optionElt.text = c;
+                nodecategoryElt.add(optionElt);
+            });
+
+
+            function applyCategoryFilter(e) {
+                var c = e.target[e.target.selectedIndex].value;
+                filter
+                    .undo('node-category')
+                    .edgesBy(function (ed) {
+                        return !c.length || ed.category === c;
+                    }, 'node-category')
+                    .apply();
+            }
+
+            function applyEdgelabelsShow(e) {
+                s.settings('drawEdgeLabels', e.target.checked);
+                s.refresh();
+            }
+
+            // Odchyti kliknuti na node a zobrazi info o zarizeni v panelu
+            s.bind('clickNode', function (e) {
+                document.getElementById("node-detail").innerHTML = dev_dict[e.data.node.id]['info'];
+            });
+
+            document.getElementById('node-category').addEventListener("change", applyCategoryFilter);
+            document.getElementById('show-edge-labels').addEventListener("change", applyEdgelabelsShow);
+        },
+    );
+
+
+</script>
+
+
+</body>
+</html>

@@ -2,46 +2,26 @@
 # coding=utf8
 
 import ipcalc
-import pickle
 from multiprocessing.dummy import Pool as ThreadPool
-from netobjects import IpObject
-import json
+from netobjects import IpObject, Network
+from tools import load_object, save_object, load_json
+from typing import TypeVar
+
+# definice typu pro typing
+ipobj_objekt = TypeVar('ipobj_objekt', bound=IpObject)
 
 # Nalouduje konfiguraci ze souboru, jsou tam treba definice pro identifikaci ruznych sitovych zarizeni
-with open('config.json') as json_data_file:
-    config = json.load(json_data_file)
+config = load_json('config.json')
 
 
-# Ulozi objekt do souboru
-def save_object(object_to_save, filename):
-    with open(filename, 'wb') as output:  # prepise soubor
-        pickle.dump(object_to_save, output, pickle.HIGHEST_PROTOCOL)
-
-
-# Nacte objekt ze souboru
-def load_object(filename):
-    with open(filename, 'rb') as input_file:
-        return pickle.load(input_file)
-
-
-def create_netobject(ipaddr):
+def create_netobject(ipaddr: str) -> ipobj_objekt:
     return IpObject(ip=ipaddr, config=config)
 
 
-adr_list = map(str, ipcalc.Network('10.60.60.0/24'))
-# adr_list = map(str, ipcalc.Network('192.168.88.0/24'))
-# netw = ipcalc.Network('192.168.88.5/26')
-# print(netw.subnet())
-# print(netw.host_first())
-# print(netw.host_last())
-# print(netw.broadcast())
-# print(netw.guess_network())
-# print(netw.info())
-# print(netw.netmask())
-# print(netw.size())
-# print(netw.to_ipv4())
-# print(netw.network())
-# exit()
+network = '10.60.0.0/16'
+# network = '10.60.60.254/32'
+
+adr_list = map(str, ipcalc.Network(network))
 
 # Vytvori pool o danem poctu vlaken
 pool = ThreadPool(125)
@@ -55,6 +35,9 @@ pool.join()
 
 save_object(n_obj_list, 'n_obj_list.pkl')
 n_obj_list = load_object('n_obj_list.pkl')
+
+network_obj = Network()
+network_obj.network = network
 print('-------------------------------------------------------------------------------------------------')
 for obj in n_obj_list:
     if obj.active:
@@ -64,4 +47,6 @@ for obj in n_obj_list:
             print('Port: {}\tName: {}\tProduct: {}\tVer: {}\tInfo: {} Cpe: {}'.format(
                 port_info.port, port_info.name, port_info.product, port_info.version,
                 port_info.extrainfo, port_info.cpe))
+        network_obj.add_device(obj)
         print('-------------------------------------------------------------------------------------------------')
+save_object(network_obj, 'network_scan_podlipan.pkl')

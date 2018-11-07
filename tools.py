@@ -6,7 +6,7 @@ import time
 import json
 import requests
 import pickle
-from typing import Any
+from typing import Any, Dict
 
 
 class SshClient:
@@ -63,11 +63,11 @@ class SshClient:
 
     # Provede prikaz a vrati vysledek
     def command_exec(self, cmd: str) -> str:
+        print(cmd)
         stdin, stdout, stderr = self.ssh_client.exec_command(cmd)
         output = stdout.read().decode('ascii').strip('\n').replace('\r', '')
         # err = stderr.read().decode('ascii').strip('\n')
-        # print(cmd)
-        # print(output)
+        print(output)
         return output
 
     # Stahne soubor z hosta (zadat i s cestou)
@@ -96,15 +96,20 @@ def get_fresh_manufacturers():
     for line in lines:
         if '(base 16)' in line:
             manufacturers_dict[line.split('(base 16)')[0].strip(' ')] = line.split('(base 16)')[1].strip('\r\t ')
-    with open('manufacturers.json', 'w') as fp:
+    with open('config/manufacturers.json', 'w') as fp:
         json.dump(manufacturers_dict, fp)
 
 
 def save_object(object_to_save: Any, filename: str):
-    with open(filename, 'wb') as output:  # prepise soubor
+    with open('objects/'+filename, 'wb') as output:  # prepise soubor
         pickle.dump(object_to_save, output, pickle.HIGHEST_PROTOCOL)
 
 
 def load_object(filename: str) -> Any:
-    with open(filename, 'rb') as input_file:
+    with open('objects/'+filename, 'rb') as input_file:
         return pickle.load(input_file)
+
+
+def load_json(filename: str) -> Dict:
+    with open('config/'+filename) as json_data_file:
+        return json.load(json_data_file)

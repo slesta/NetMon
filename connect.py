@@ -1,17 +1,12 @@
 #!/usr/bin/env python
 
 import re
-from typing import List, Dict, Tuple, TypeVar
+from typing import Dict, Tuple
 from netobjects import *
-import json
 import ipcalc
-from tools import SshClient, load_object, save_object, get_fresh_manufacturers
+from tools import SshClient, load_object, save_object, get_fresh_manufacturers, load_json
 import os
 import time
-
-# definice typu pro typing
-device_objekt = TypeVar('device_objekt', bound=Device)
-sshclient_objekt = TypeVar('sshclient_objekt', bound=SshClient)
 
 
 def clean_item(item: str) -> str:
@@ -23,7 +18,7 @@ def mikrotik_line_to_keys(item: str) -> Dict[str, str]:
     regex = r"[a-zA-Z0-9-_]+="
     subst = r"||\g<0>"
     result = re.sub(regex, subst, item, ).replace(' \r\n', '').split(' ||')[1:]
-    result_dict = {}
+    result_dict = dict()
     for i in result:
         result_dict[str(i.split('=')[0])] = i.split('=')[1].strip(' \r\n\t')
     result_dict['interface_state'] = 'DOWN'
@@ -44,7 +39,7 @@ def mikrotik_filter_virtual(wlist: List) -> Tuple[List[dict], List[dict]]:
     virtual = list()
     master = list()
     for item in wlist:
-        if item['interface-type'] == 'virtual':
+        if item['interface-type'] in ['virtual', 'virtual-AP']:
             virtual.append(item)
         else:
             master.append(item)
@@ -117,7 +112,9 @@ def linux_arp_to_keys(item: str) -> List[Dict[str, str]]:
     return listout
 
 
-def linux_data(c: sshclient_objekt, manufacturers_dict: dict, username: str, password: str) -> device_objekt:
+def linux_data(c: SshClient, manufacturers_dict: dict, username: str,
+               password: str, uid_list: list) -> Device:
+    ubnt = False
     # ziska device info z Linux zarizeni
     firmware = ''
     model = 'Unknown'
@@ -136,7 +133,7 @@ def linux_data(c: sshclient_objekt, manufacturers_dict: dict, username: str, pas
             if 'Description' in line:
                 firmware = line.split(':')[1].strip(' \n\r\t')
 
-    cmd = 'cat /etc/machine-id'  # Zjisti jedinecny identifikator
+    cmd = 'cat /var/lib/dbus/machine-id'  # Zjisti jedinecny identifikator
     out = c.command_exec(cmd)
     if out:
         serial = out.strip(' \r\n\t')
@@ -144,6 +141,7 @@ def linux_data(c: sshclient_objekt, manufacturers_dict: dict, username: str, pas
     cmd = 'mca-status'  # Zjisti jedinecny identifikator, hostname, model, fw z UBNT
     out = c.command_exec(cmd)
     if out:
+        ubnt = True
         line = out.split('\n')[0]
         hostname = line.split(',')[0].split('=')[1]
         serial = line.split(',')[1].split('=')[1]
@@ -159,7 +157,8 @@ def linux_data(c: sshclient_objekt, manufacturers_dict: dict, username: str, pas
         # print(interface_list)
 
     # ziska routovaci tabulku z Linux zarizeni
-    cmd = 'ip route sh'
+    # cmd = 'ip route sh'
+    cmd = 'ip route ls table all'
     out = c.command_exec(cmd)
     route_list = list()
     if out:
@@ -194,10 +193,13 @@ def linux_data(c: sshclient_objekt, manufacturers_dict: dict, username: str, pas
         # print(bridge_list)
 
     # ziska arp z linux (nejdriv poskadli broadcast pingem aby naplnil tabulku vsim dostupnym)
-    cmd = 'ping 255.255.255.255 -c1'
-    c.command_exec(cmd)
-    cmd = 'ping 255.255.255.255 -b'
-    c.command_exec(cmd)
+    if 'XS5' not in firmware:  # XS5 firmware ma problem s parametrama pingu, tak vynechame
+        if not ubnt:
+            cmd = 'ping 255.255.255.255 -c1'
+            c.command_exec(cmd)
+        else:
+            cmd = 'ping 255.255.255.255 -b'
+            c.command_exec(cmd)
     cmd = 'cat /proc/net/arp'
     out = c.command_exec(cmd)
     arp_list = list()
@@ -218,6 +220,7 @@ def linux_data(c: sshclient_objekt, manufacturers_dict: dict, username: str, pas
         interface_obj.name = item_int['interface']
         interface_obj.state = item_int['state']
         interface_obj.mac = item_int['mac']
+        interface_obj.parent = device_obj
 
         for item_ip in ip_list:  # Vytvori ip objekty pro dany interfejs
             if interface_obj.name == item_ip['interface']:
@@ -225,6 +228,7 @@ def linux_data(c: sshclient_objekt, manufacturers_dict: dict, username: str, pas
                 ip_obj.ip = item_ip['ip']
                 ip_obj.mask = item_ip['mask']
                 ip_obj.brd = item_ip['broadcast']
+                ip_obj.parent = interface_obj
                 interface_obj.add_ip(ip_obj)
 
         for item_route in route_list:  # Vytvori route objekty pro dany interfejs
@@ -232,6 +236,7 @@ def linux_data(c: sshclient_objekt, manufacturers_dict: dict, username: str, pas
                 route_obj = Route()
                 route_obj.net = item_route['net']
                 route_obj.gw = item_route['gateway']
+                route_obj.parent = interface_obj
                 interface_obj.add_route(route_obj)
 
         for item_wireless in wireless_list:  # Vytvori wireless objekty pro dany interfejs
@@ -241,6 +246,7 @@ def linux_data(c: sshclient_objekt, manufacturers_dict: dict, username: str, pas
                 wireless_obj.mode = item_wireless['mode']
                 wireless_obj.frequency = item_wireless['frequency']
                 wireless_obj.band = item_wireless['ieee']
+                wireless_obj.parent = interface_obj
                 interface_obj.wireless = wireless_obj
                 # interface_obj.add_wireless(wireless_obj)
 
@@ -251,12 +257,14 @@ def linux_data(c: sshclient_objekt, manufacturers_dict: dict, username: str, pas
                 arp_obj.mac = item_arp['mac']
                 if item_arp['mac'].replace(':', '')[0:6].upper() in manufacturers_dict.keys():  # jestli zna vyrobce
                     arp_obj.manufacturer = manufacturers_dict[item_arp['mac'].replace(':', '')[0:6].upper()]
+                arp_obj.parent = interface_obj
                 interface_obj.add_arp(arp_obj)
         device_obj.add_interface(interface_obj)
 
     # Vytvori bridge objekt a namapuje do nej interfejs objekty
     for item_br in bridge_list:
         br_obj = Bridge()
+        br_obj.parent = device_obj
         for bint_obj in device_obj.interface.keys():
             if bint_obj == item_br['bridge']:
                 br_obj.bridge = device_obj.interface[bint_obj]
@@ -265,10 +273,13 @@ def linux_data(c: sshclient_objekt, manufacturers_dict: dict, username: str, pas
         device_obj.add_bridge(br_obj)
 
     device_obj.print()
+    if device_obj.uid in uid_list:
+        device_obj.uid = 'DUPLICATE'
     return device_obj
 
 
-def mikrotik(c: sshclient_objekt, manufacturers_dict: dict, username: str, password: str) -> device_objekt:
+def mikrotik(c: SshClient, manufacturers_dict: dict, username: str,
+             password: str, uid_list: list) -> Device:
     # ziska device info z mikrotik
     cmd = '/system identity print'
     out = c.command_exec(cmd).replace('\r', '')
@@ -283,14 +294,21 @@ def mikrotik(c: sshclient_objekt, manufacturers_dict: dict, username: str, passw
         device_dict.update(out)
 
     # ziska routy z mikrotik
-    cmd = '/ip route print terse where !pref-src'
+    # cmd = '/ip route print terse where !pref-source   TOHLE BLBNE V nekterejch verzich FW
+    cmd = '/ip route print terse'
     out = c.command_exec(cmd)
     route_list = list()
     if out:
-        out = list(map(mikrotik_line_to_keys, out.split('\n')[:-1]))
+        out = out.split('\n')[:-1]
+        out_no_connect = list()  # odfiltruje lokalni routy interfejsu
+        for rou in out:  # odfiltruje lokalni routy interfejsu
+            if 'C' not in rou[0:7]:
+                out_no_connect.append(rou)
+        out = list(map(mikrotik_line_to_keys, out_no_connect))
         for line in out:
             if 'unreachable' not in line['gateway-status']:
                 route_list.append(line)
+    print(route_list)
 
     # ziska ip z mikrotik
     cmd = '/ip address print terse where !disabled'
@@ -359,6 +377,7 @@ def mikrotik(c: sshclient_objekt, manufacturers_dict: dict, username: str, passw
         int_obj.name = int_item['name']
         int_obj.state = int_item['interface_state']
         int_obj.mtu = int_item['mtu']
+        int_obj.parent = device_obj
         for item in wireless_list:  # Najde mac ve wireless ints
             if item['name'] == int_item['name']:
                 int_obj.mac = item['mac-address']
@@ -378,13 +397,15 @@ def mikrotik(c: sshclient_objekt, manufacturers_dict: dict, username: str, passw
                 ip_obj.ip = ip_item['address'].split('/')[0]
                 ip_obj.mask = ip_item['address'].split('/')[1]
                 ip_obj.brd = ipcalc.Network(ip_item['address']).broadcast()
+                ip_obj.parent = int_obj
                 int_obj.add_ip(ip_obj)
 
         for route_item in route_list:  # Vytvori route objekty pro dany interfejs
-            if int_obj.name == route_item['gateway-status'].split(' reachable ')[1]:
+            if int_obj.name == route_item['gateway-status'].split(' reachable via  ')[1]:
                 route_obj = Route()
                 route_obj.net = route_item['dst-address']
                 route_obj.gw = route_item['gateway']
+                route_obj.parent = int_obj
                 int_obj.add_route(route_obj)
 
         for wireless_item in wireless_list:  # Vytvori wireless objekty pro dany interfejs
@@ -394,13 +415,18 @@ def mikrotik(c: sshclient_objekt, manufacturers_dict: dict, username: str, passw
                 wireless_obj.mode = wireless_item['mode']
                 wireless_obj.frequency = wireless_item['frequency']
                 wireless_obj.band = wireless_item['band']
+                wireless_obj.parent = int_obj
                 int_obj.wireless = wireless_obj
 
         for wireless_virt_item in wireless_virtual_list:  # Vytvori wireless virtual objekty pro dany interfejs
             if int_obj.name == wireless_virt_item['name']:
                 wireless_virt_obj = WirelessVirtual()
                 wireless_virt_obj.essid = wireless_virt_item['ssid']
-                wireless_virt_obj.mode = wireless_virt_item['mode']
+                if 'mode' not in wireless_virt_item.keys():
+                    wireless_virt_obj.mode = device_obj.interface[wireless_virt_item['master-interface']].wireless.mode
+                else:
+                    wireless_virt_obj.mode = wireless_virt_item['mode']
+                wireless_virt_obj.parent = int_obj
                 int_obj.wireless_virt = wireless_virt_obj
 
         for arp_item in arp_list:  # Vytvori arp objekty pro dany interfejs
@@ -412,12 +438,14 @@ def mikrotik(c: sshclient_objekt, manufacturers_dict: dict, username: str, passw
                     # jestli zna vyrobce
                     if arp_item['mac-address'].replace(':', '')[0:6].upper() in manufacturers_dict.keys():
                         arp_obj.manufacturer = manufacturers_dict[arp_item['mac-address'].replace(':', '')[0:6].upper()]
+                    arp_obj.parent = int_obj
                     int_obj.add_arp(arp_obj)
             device_obj.add_interface(int_obj)
 
     # Vytvori bridge objekt a namapuje do nej interfejs objekty
     for item_br in bridge_list:
         br_obj = Bridge()
+        br_obj.parent = device_obj
         for bint_obj in device_obj.interface.keys():
             if bint_obj == item_br['name']:
                 br_obj.bridge = device_obj.interface[bint_obj]
@@ -437,95 +465,112 @@ def mikrotik(c: sshclient_objekt, manufacturers_dict: dict, username: str, passw
         )
 
     device_obj.print()
+    if device_obj.uid in uid_list:
+        device_obj.uid = 'DUPLICATE'
     return device_obj
 
 
 # Jestlize je seznam vyrobcu starsi nez 30 dni, tak ho obcerstvi
-if (int(time.time())-int(os.stat('manufacturers.json').st_atime))/60/60/24/30 > 1:
+if (int(time.time())-int(os.stat('config/manufacturers.json').st_atime))/60/60/24/30 > 1:
     get_fresh_manufacturers()
 
-
 # Nacte seznam vyrobcu do promenne
-with open('manufacturers.json') as json_data_file:
-    manufacturers = json.load(json_data_file)
+manufacturers = load_json('manufacturers.json')
 
 # Nacte ucty pro test prihlaseni do promenne
-with open('accounts.json') as json_data_file:
-    accounts = json.load(json_data_file)
-
-# inicializuje seznam pro detekovana zarizeni
-network_list = list()
+accounts = load_json('accounts.json')
 
 # nacte seznam naskenovanych objektu
-n_obj_list = load_object('n_obj_list.pkl')
+network_scan_obj = load_object('network_scan_podlipan.pkl')
+
+# inicializuje objekt network pro detekovana zarizeni
+try:
+    network_obj = load_object('network.pkl')
+except OSError as e:
+    print(e.errno)
+    network_obj = Network()
+    network_obj.network = network_scan_obj.network
+
+
 print('-------------------------------------------------------------------------------------------------')
-for obj in n_obj_list:
-    dev_obj = None
-    if obj.active:
-        print('IP: {} \tOS: {} \tDev: {} \tOS-info: {} \tDev-info: {}'.format(obj.ip, obj.os, obj.device,
-                                                                              obj.os_info, obj.device_info))
-        for port_info in obj.active_ports:
-            print('Port: {}\tName: {}\tProduct: {}\tVer: {}\tInfo: {} Cpe: {}'.format(
-                port_info.port, port_info.name, port_info.product, port_info.version,
-                port_info.extrainfo, port_info.cpe))
+for obj in network_scan_obj.devices:
+    if obj.ip not in network_obj.get_dev_ip_list():
+        dev_obj = None
+        if obj.active:
+            print('IP: {} \tOS: {} \tDev: {} \tOS-info: {} \tDev-info: {}'.format(obj.ip, obj.os, obj.device,
+                                                                                  obj.os_info, obj.device_info))
+            for port_info in obj.active_ports:
+                print('Port: {}\tName: {}\tProduct: {}\tVer: {}\tInfo: {} Cpe: {}'.format(
+                    port_info.port, port_info.name, port_info.product, port_info.version,
+                    port_info.extrainfo, port_info.cpe))
 
-        if obj.os in ['RouterOS', 'Linux']:
-            cl = None
-            usr, passwd = None, None
-            for account in accounts:
-                try:
-                    print(account)
-                    cl = SshClient(obj.ip, 22, account['user'], account['password'])
-                    usr = account['user']
-                    passwd = account['password']
-                    break
-                except Exception as er:
-                    print(er)
-                    cl = False
-                    pass
-                # time.sleep(1)
+            if obj.os in ['RouterOS', 'Linux']:
+                cl = None
+                usr, passwd = None, None
+                for account in accounts:
+                    try:
+                        print(account)
+                        cl = SshClient(obj.ip, 22, account['user'], account['password'])
+                        usr = account['user']
+                        passwd = account['password']
+                        break
+                    except Exception as er:
+                        print(er)
+                        cl = False
+                        time.sleep(2)
+                        pass
 
-            if cl:
-                if obj.os == 'Linux':
-                    dev_obj = linux_data(cl, manufacturers, usr, passwd)
-                if obj.os == 'RouterOS':
-                    dev_obj = mikrotik(cl, manufacturers, usr, passwd)
-                cl.close_ssh()
+                if cl:
+                    if obj.os == 'Linux':
+                        dev_obj = linux_data(cl, manufacturers, usr, passwd, network_obj.get_uid_list())
+                    if obj.os == 'RouterOS':
+                        dev_obj = mikrotik(cl, manufacturers, usr, passwd, network_obj.get_uid_list())
+                    cl.close_ssh()
 
-    if dev_obj:
-        dev_obj.ip = obj.ip
-        dev_obj.os = obj.os
-        dev_obj.os_info = obj.os_info
-        dev_obj.device = obj.device
-        dev_obj.device_info = obj.device_info
-        dev_obj.active = obj.active
-        dev_obj.pingable = obj.pingable
-        dev_obj.min = obj.min
-        dev_obj.avg = obj.avg
-        dev_obj.max = obj.max
-        dev_obj.mdev = obj.mdev
-        dev_obj.total = obj.total
-        dev_obj.loss = obj.loss
-        dev_obj.active_ports = obj.active_ports
-        dev_obj.errors = obj.errors
-    else:
-        dev_obj = GenericDevice()
-        dev_obj.ip = obj.ip
-        dev_obj.os = obj.os
-        dev_obj.os_info = obj.os_info
-        dev_obj.device = obj.device
-        dev_obj.device_info = obj.device_info
-        dev_obj.active = obj.active
-        dev_obj.pingable = obj.pingable
-        dev_obj.min = obj.min
-        dev_obj.avg = obj.avg
-        dev_obj.max = obj.max
-        dev_obj.mdev = obj.mdev
-        dev_obj.total = obj.total
-        dev_obj.loss = obj.loss
-        dev_obj.active_ports = obj.active_ports
-        dev_obj.errors = obj.errors
-    network_list.append(dev_obj)
+        if dev_obj:
 
-    print('-------------------------------------------------------------------------------------------------')
-save_object(network_list, 'network_device_list.pkl')
+            dev_obj.ip = obj.ip
+            dev_obj.os = obj.os
+            dev_obj.os_info = obj.os_info
+            dev_obj.device = obj.device
+            dev_obj.device_info = obj.device_info
+            dev_obj.active = obj.active
+            dev_obj.pingable = obj.pingable
+            dev_obj.min = obj.min
+            dev_obj.avg = obj.avg
+            dev_obj.max = obj.max
+            dev_obj.mdev = obj.mdev
+            dev_obj.total = obj.total
+            dev_obj.loss = obj.loss
+            dev_obj.active_ports = obj.active_ports
+            dev_obj.errors = obj.errors
+            if dev_obj.uid != 'DUPLICATE':
+                network_obj.add_device(dev_obj)
+            else:
+                network_obj.add_duplicate_device(dev_obj)
+        else:
+            dev_obj = GenericDevice()
+            dev_obj.ip = obj.ip
+            dev_obj.os = obj.os
+            dev_obj.os_info = obj.os_info
+            dev_obj.device = obj.device
+            dev_obj.device_info = obj.device_info
+            dev_obj.active = obj.active
+            dev_obj.pingable = obj.pingable
+            dev_obj.min = obj.min
+            dev_obj.avg = obj.avg
+            dev_obj.max = obj.max
+            dev_obj.mdev = obj.mdev
+            dev_obj.total = obj.total
+            dev_obj.loss = obj.loss
+            dev_obj.active_ports = obj.active_ports
+            dev_obj.errors = obj.errors
+            network_obj.add_device(dev_obj)
+
+        save_object(network_obj, 'network.pkl')
+
+        print('-------------------------------------------------------------------------------------------------')
+save_object(network_obj, 'network.pkl')
+
+for dev in network_obj.duplicate_device:
+    dev.print()
