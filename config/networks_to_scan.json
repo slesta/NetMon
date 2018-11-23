@@ -1,0 +1,18 @@
+{
+  "TestNetwork": {
+    "networks": [
+      "10.0.0.0/24",
+      "192.168.0.0/24"
+    ],
+    "accounts": [
+      {
+        "username": "admin",
+        "password": "secret"
+      },
+      {
+        "username": "admin",
+        "password": "secret"
+      }
+    ]
+  }
+}

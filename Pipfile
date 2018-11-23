@@ -26,6 +26,8 @@ pandas = "*"
 "mpld3" = "*"
 pysnmp = "*"
 scp = "*"
+tqdm = "*"
+pylint = "*"
 
 [requires]
 python_version = "3.6"

@@ -1,478 +1,69 @@
 #!/usr/bin/env python
-# coding=utf8
 
-from socket import *
-import subprocess
-import nmap
-from typing import Any, List
+""" Modul s objekty reprezentujicimy sit. Od site pres zarizeni az po jejich interfejsy a
+ jejich atributy. """
+
+import logging
+from typing import Any, List, NoReturn, Union
 import uuid
 import ipcalc
+import scanobjects
 
+# Nastavi logovani
+LOGGER = logging.getLogger(__name__)
 
-class PortObject(object):
 
-    def __init__(self):
-        self.port = 0
-        self.name = ''
-        self.state = ''
-        self.product = ''
-        self.version = ''
-        self.extrainfo = ''
-        self.cpe = ''
-
-    def get_html_info(self):
-        out = '<li>{}:{} {}</li>'.format(self.port, self.name, self.cpe)
-        return out
-
-
-class IpObject(object):
-
-    def __init__(self, config: dict, ip: str = '127.0.0.1'):
-        self.ip = ip
-        self.active = False
-        self.pingable = False
-        self.ping_done = False
-        self.scan_done = False
-        self.ports_to_scan = config['ports_to_scan']
-        self.detections = config['detect']
-        self.min = 0
-        self.avg = 0
-        self.max = 0
-        self.mdev = 0
-        self.total = 0
-        self.loss = 0
-        self.active_ports = list()
-        self.errors = list()
-        self.os = ''  # Other, Linux, Windows, AirOS, IOS, RouterOS
-        self.os_info = ''
-        self.device = ''  # Other, Cisco, Mikrotik, UBNT, PC, Printer
-        self.device_info = ''
-        self.ping()
-        # self.scan_ports()
-        self.scan_nmap()
-        self.detect_device()
-
-    def get_html_info(self):
-        out = ('<tr>'
-               '<td>{0}</td>'
-               '').format(self.ip)
-        return out
-
-    def ping(self, w: int = 1, c: int = 1):
-        cmd = "ping -c {} -W {} {}".format(c, w, self.ip).split(' ')
-        try:
-            output = subprocess.check_output(cmd).decode().strip()
-            lines = output.split('\n')
-            total = lines[-2].split(',')[3].split()[1]
-            loss = lines[-2].split(',')[2].split()[0]
-            timing = lines[-1].split()[3].split('/')
-            self.min = float(timing[0])
-            self.avg = float(timing[1])
-            self.max = float(timing[2])
-            self.mdev = float(timing[3])
-            self.total = float(total.replace('ms', ''))
-            self.loss = float(loss.replace('%', ''))
-            self.pingable = True
-            self.active = True
-            self.ping_done = True
-        except Exception as e:
-            self.errors.append(e)
-            self.pingable = False
-            self.ping_done = True
-
-    def scan_ports(self):
-        for port in self.ports_to_scan:
-            try:
-                s = socket(AF_INET, SOCK_STREAM)
-                s.settimeout(0.3)
-                result = s.connect_ex((self.ip, port))
-                if result == 0:
-                    self.active_ports.append(port)
-                    self.active = True
-                s.close()
-                self.scan_done = True
-            except Exception as e:
-                self.errors.append(e)
-                self.scan_done = True
-
-    def scan_nmap(self):
-
-        def to_str(itm: str) -> str:
-            return str(itm) + ','
-
-        nm = nmap.PortScanner()
-        sc = nm.scan(self.ip, ''.join(map(to_str, self.ports_to_scan)))  # Oskenuje porty, arguments="-O", sudo=True
-        if self.ip in sc['scan'].keys():  # Pokud je IP aktivni, tak zapise porty
-            # print(sc['scan'][self.ip]['hostnames'][0]['name'])
-            if 'tcp' in sc['scan'][self.ip].keys():
-                for port in sc['scan'][self.ip]['tcp']:
-                    if sc['scan'][self.ip]['tcp'][port]['state'] == 'open':
-                        port_obj = PortObject()
-                        port_obj.port = port
-                        port_obj.name = sc['scan'][self.ip]['tcp'][port]['name']
-                        port_obj.state = sc['scan'][self.ip]['tcp'][port]['state']
-                        port_obj.product = sc['scan'][self.ip]['tcp'][port]['product']
-                        port_obj.version = sc['scan'][self.ip]['tcp'][port]['version']
-                        port_obj.extrainfo = sc['scan'][self.ip]['tcp'][port]['extrainfo']
-                        port_obj.cpe = sc['scan'][self.ip]['tcp'][port]['cpe']
-                        self.active_ports.append(port_obj)
-                        self.active = True
-
-    def detect_device(self):  # Dle infa z naskenovanych portu zjisti OS a device
-        for detect in self.detections:  # projde vsechny sablony pro detekci
-            conditions_result = 0  # pocet shodnych podminek
-            for condition in detect['conditions']:
-                for portup in self.active_ports:
-                    if portup.port == condition['port_num']:
-                        if condition['contain'] in vars(portup)[condition['item']]:  # kontrola shody podminky
-                            conditions_result += 1
-            if conditions_result == len(detect['conditions']):  # pokud byly shodne vsechny, tak zapise vysledek
-                if detect['result']['os']:
-                    self.os = detect['result']['os']
-                if detect['result']['dev']:
-                    self.device = detect['result']['dev']
-                if detect['result']['os_info']:
-                    if detect['result']['os_info_port']:  # Test jestli ma nahradit osInfo textem zadane polozky portu
-                        for p in self.active_ports:
-                            if p.port == detect['result']['os_info_port']:
-                                self.os_info = vars(p)[detect['result']['os_info']]
-                    else:
-                        self.os_info = detect['result']['os_info']
-                if detect['result']['dev_info']:
-                    if detect['result']['dev_info_port']:  # Test jestli ma nahradit devInfo textem zadane polozky portu
-                        for p in self.active_ports:
-                            if p.port == detect['result']['dev_info_port']:
-                                self.device_info = vars(p)[detect['result']['dev_info']]
-                    else:
-                        self.device_info = detect['result']['dev_info']
-
-
-class Network(object):
-
-    def __init__(self, network: str = None):
-        self.network = network
-        self.devices = list()
-        self.duplicate_device = list()
-
-    def add_device(self, objectitem):
-        self.devices.append(objectitem)
-
-    def add_duplicate_device(self, objectitem):
-        self.duplicate_device.append(objectitem)
-
-    def find_interface_by_ip(self, ip: str) -> Any:
-        for device in self.devices:
-            if type(device) == Device:
-                for interface_key in device.interface.keys():
-                    for ip_key in device.interface[interface_key].ip.keys():
-                        if ip == device.interface[interface_key].ip[ip_key].ip:
-                            return device.interface[interface_key]
-
-    def get_uid_list(self) -> List[str]:
-        uid_list = list()
-        for device in self.devices:
-            if type(device) == Device:
-                uid_list.append(device.uid)
-        return uid_list
-
-    def get_dev_ip_list(self) -> List[str]:
-        ip_list = list()
-        for device in self.devices:
-            ip_list.append(device.ip)
-        return ip_list
-
-    def get_dev_by_uuid(self, uuidh: str) -> Any:
-        for dev in self.devices:
-            if dev.uuid == uuidh:
-                return dev
-
-    def get_ips_same_net(self, ip: str) -> List[Any]:
-        out = list()
-        for device in self.devices:
-            if type(device) == Device:
-                for ip_item in device.get_ips():
-                    if ip in ipcalc.Network('{}/{}'.format(ip_item.ip, ip_item.mask)):
-                        out.append(ip_item)
-        return out
-
-
-class GenericDevice(object):
-
-    def __init__(self):
-        self.parent = None
-        self.ip = None
-        self.uuid = str(uuid.uuid4())
-        self.os = None  # Other, Linux, Windows, AirOS, IOS, RouterOS
-        self.os_info = ''
-        self.device = ''  # Other, Cisco, Mikrotik, UBNT, PC, Printer
-        self.device_info = ''
-        self.active = False
-        self.pingable = False
-        self.min = 0
-        self.avg = 0
-        self.max = 0
-        self.mdev = 0
-        self.total = 0
-        self.loss = 0
-        self.active_ports = list()
-        self.errors = list()
-        self.infrastructure_device = False
-
-    def printt(self):
-        pass
-
-    def get_html_info(self):
-        out = ('<ul><li>ip: <a href="http://{0}" target="_blank">{0}</a></li>'
-               '<li>device: {1}</li>'
-               '<li>device-info: {3}</li>'
-               '<li>os: {2}</li>'
-               '<li>os-info: {4}</li>'
-               '').format(self.ip, self.device, self.os, self.device_info, self.os_info)
-        if len(self.active_ports):
-            out += '<li>open ports:<ul>'
-            for port in self.active_ports:
-                out += port.get_html_info()
-            out += '</ul></li>'
-        out += '</ul>'
-        return out
-
-
-class Device(GenericDevice):
-
-    def __init__(self):
-        GenericDevice.__init__(self)
-        self.hostname = None
-        self.uid = None
-        self.firmware = None
-        self.model = None
-        self.manufacturer = None
-        self.category = None
-        self.username = None
-        self.password = None
-        self.interface = dict()
-        self.bridge = dict()
-
-    def __str__(self):
-        return self.hostname + ' - ' + self.model
-
-    def add_interface(self, objectitem):
-        self.interface[str(objectitem)] = objectitem
-
-    def add_bridge(self, objectitem):
-        self.bridge[str(objectitem)] = objectitem
-
-    def get_default_route(self) -> Any:
-        for int_key in self.interface.keys():
-            for route_key in self.interface[int_key].route.keys():
-                if self.interface[int_key].route[route_key].net == '0.0.0.0/0':
-                    return self.interface[int_key].route[route_key]
-
-    def get_gateways(self) -> List:
-        out = list()
-        hlp = list()
-        for int_key in self.interface.keys():
-            for route_key in self.interface[int_key].route.keys():
-                if self.interface[int_key].route[route_key].gw not in hlp:
-                    out.append(self.interface[int_key].route[route_key])
-                    hlp.append(self.interface[int_key].route[route_key].gw)
-        return out
-
-    def get_routes(self) -> List:
-        out = list()
-        for int_key in self.interface.keys():
-            for route_key in self.interface[int_key].route.keys():
-                out.append(self.interface[int_key].route[route_key])
-        return out
-
-    def get_ips(self) -> List:
-        out = list()
-        for int_key in self.interface.keys():
-            for ip_key in self.interface[int_key].ip.keys():
-                out.append(self.interface[int_key].ip[ip_key])
-        return out
-
-    def get_html_dev_info(self):
-        out = ('<h2>{}</h2>'
-               '<ul>'
-               '<li>Model: {}</li>'
-               '<li>Firmware: {}</li>'
-               '<li>Uid: {}</li>'
-               '<li>Account: {}/{}</li>'
-               '').format(self.hostname, self.model, self.firmware, self.uid, self.username,
-                          self.password)
-        if len(self.bridge):
-            out += '<li>Bridges:</li>'
-            for item in self.bridge.keys():
-                out += self.bridge[item].get_html_dev_info()
-            out += ''
-
-        if len(self.interface):
-            out += '<li>Interfaces:</li>'
-            for item in self.interface.keys():
-                out += self.interface[item].get_html_dev_info()
-            out += ''
-
-        out += '</ul>'
-        return out
-
-    def print(self):
-        print('####################################################################################################')
-        print('|==== Hostname: {}'.format(self.hostname))
-        print('|==== Model: {}, Manufacturer: {}, Firmware: {}, Uid: {}, Username: {}, Password: {}'.format(
-            self.model, self.manufacturer, self.firmware, self.uid, self.username, self.password))
-        # print('Interfaces: {}'.format(', '.join(self.interface.keys())))
-        if len(self.interface):
-            for item in self.interface.keys():
-                self.interface[item].print()
-        if len(self.bridge):
-            for item in self.bridge.keys():
-                self.bridge[item].print()
-
-
-class Interface(object):
-
-    def __init__(self):
-        self.parent = None
-        self.name = None
-        self.mac = None
-        self.mtu = None
-        self.state = None
-        self.ip = dict()
-        self.route = dict()
-        self.wireless = None
-        self.wireless_virt = None
-        self.arp = dict()
-
-    def __str__(self):
-        return self.name
-
-    def add_ip(self, objectitem):
-        self.ip[str(objectitem)] = objectitem
-
-    def add_route(self, objectitem):
-        self.route[str(objectitem)] = objectitem
-
-    def add_arp(self, objectitem):
-        self.arp[str(objectitem)] = objectitem
-
-    def get_html_dev_info(self):
-        out = '<b>{}</b> - {} {} {}<br>'.format(self.name, self.mac, self.mtu, self.state)
-        if len(self.ip):
-            out += '&nbsp;&nbsp;<i>IP:</i><br>'
-            for item in self.ip.keys():
-                out += self.ip[item].get_html_dev_info()
-        if len(self.route):
-            out += '&nbsp;&nbsp;<i>Route:</i><br>'
-            for item in self.route.keys():
-                out += self.route[item].get_html_dev_info()
-        if self.wireless:
-            out += self.wireless.get_html_dev_info()
-        if self.wireless_virt:
-            out += self.wireless_virt.get_html_dev_info()
-        if len(self.arp):
-            out += '&nbsp;&nbsp;<i>ARP:</i><br>'
-            for item in self.arp.keys():
-                out += self.arp[item].get_html_dev_info()
-
-        return out
-
-    def print(self):
-        # print('----------------------------------------------------------------------------------------------------')
-        print('|  ')
-        print('|-{}'.format(self.name))
-        print('|  |-MAC: {}  MTU: {}  State: {}'.format(self.mac, self.mtu, self.state))
-
-        if len(self.ip):
-            print('|  |')
-            print('|  |-IP:')
-            for item in self.ip.keys():
-                self.ip[item].print()
-
-        if len(self.route):
-            print('|  |')
-            print('|  |-Route:')
-            for item in self.route.keys():
-                self.route[item].print()
-
-        if self.wireless:
-            print('|  |')
-            print('|  |-Wireless:')
-            self.wireless.print()
-
-        if self.wireless_virt:
-            print('|  |')
-            print('|  |-Wireless virtual:')
-            self.wireless_virt.print()
-
-        if len(self.arp):
-            print('|  |')
-            print('|  |-Arp:')
-            for item in self.arp.keys():
-                self.arp[item].print()
-
-
-class Bridge(object):
-
-    def __init__(self):
-        self.parent = None
-        self.bridge = Interface
-        self.interface = {}
-
-    def __str__(self):
-        return str(self.bridge)
-
-    def add_interface(self, objectitem):
-        self.interface[str(objectitem)] = objectitem
-
-    def get_html_dev_info(self):
-        out = '<b>{}</b> ports: {}<br>'.format(self.bridge, ', '.join(self.interface.keys()))
-        return out
-
-    def print(self):
-        print('|  ')
-        print('|--Bridge: {}'.format(self.bridge))
-        print('|  |-Interfaces: {}'.format(', '.join(self.interface.keys())))
-
+# TODO: Predlat to co jde na list comprehensions
 
 class Ip:
+    """ Objekt predstavuje IP adresu interfejsu """
 
     def __init__(self):
         self.parent = None
-        self.ip = None
+        self.ipaddr = None
         self.mask = None
         self.brd = None
 
     def __str__(self):
-        return self.ip
+        return self.ipaddr
 
     def get_html_dev_info(self):
-        out = '&nbsp;&nbsp;&nbsp;|-{}/{} brd {}<br>'.format(self.ip, self.mask, self.brd)
+        """ Vrati info o objektu v html podobe """
+
+        out = '&nbsp;&nbsp;&nbsp;|-{}/{} brd {}<br>'.format(self.ipaddr, self.mask, self.brd)
         return out
 
     def print(self):
-        print('|  |  |-{}/{} brd {}'.format(self.ip, self.mask, self.brd))
+        """ Vytiskne info o objektu """
+
+        print('|  |  |-{}/{} brd {}'.format(self.ipaddr, self.mask, self.brd))
 
 
-class Route(object):
+class Route:
+    """ Objekt predstavuje routu interfejsu """
 
     def __init__(self):
         self.parent = None
         self.net = None
-        self.gw = None
+        self.gate = None
 
     def __str__(self):
         return self.net
 
     def get_html_dev_info(self):
-        out = '&nbsp;&nbsp;&nbsp;|-{} gateway {}<br>'.format(self.net, self.gw)
+        """ Vrati info o objektu v html podobe """
+
+        out = '&nbsp;&nbsp;&nbsp;|-{} gateway {}<br>'.format(self.net, self.gate)
         return out
 
     def print(self):
-        print('|  |  |-{} gateway {}'.format(self.net, self.gw))
+        """ Vytiskne info o objektu """
+
+        print('|  |  |-{} gateway {}'.format(self.net, self.gate))
 
 
-class Wireless(object):
-
+class Wireless:
+    """ Predstavuje hw wireless vrstvu interfejsu """
     def __init__(self):
         self.parent = None
         self.essid = None
@@ -484,27 +75,33 @@ class Wireless(object):
     def __str__(self):
         return self.essid
 
-    def add_interface(self, objectitem):
+    def add_interface(self, objectitem) -> NoReturn:
+        """ Prida vazbu virtual wireless vrstvu nalezejici k teto hw wireess vrstve """
+
         self.virtual[str(objectitem)] = objectitem
 
-    def get_html_dev_info(self):
-        out = '&nbsp;&nbsp;<i>Wireless:</i> {}<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{} {} {}<br>'.format(self.essid,
-                                                                                                     self.mode,
-                                                                                                     self.frequency,
-                                                                                                     self.band)
-        return out
+    def get_html_dev_info(self) -> str:
+        """ Vrati info o objektu v html podobe """
 
-    def print(self):
-        print('|  |  |-{} mode: {}  frequency: {}  band: {}'.format(self.essid, self.mode, self.frequency, self.band))
+        return ('&nbsp;&nbsp;<i>Wireless:</i> {}<br>'
+                '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{}'
+                ' {} {}<br>').format(self.essid, self.mode, self.frequency, self.band)
 
-        if len(self.virtual):
+    def print(self) -> NoReturn:
+        """ Vytiskne info o objektu """
+
+        print('|  |  |-{} mode: {}  frequency: {}  band: {}'
+              .format(self.essid, self.mode, self.frequency, self.band))
+
+        if self.virtual:
             print('|  |  |')
             print('|  |  | Wireless virtual:')
-            for item in self.virtual.keys():
+            for item in self.virtual:
                 self.virtual[item].print()
 
 
-class WirelessVirtual(object):
+class WirelessVirtual:
+    """ Objekt udrzuje info o Virtualni wireless vrstve interfejsu """
 
     def __init__(self):
         self.parent = None
@@ -515,29 +112,602 @@ class WirelessVirtual(object):
     def __str__(self):
         return self.essid
 
-    def get_html_dev_info(self):
-        out = '&nbsp;&nbsp;<i>WirelessVirt:</i> {} <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|-{} {}<br>'.format(
-            self.essid, self.mode, str(self.master))
+    def get_html_dev_info(self) -> str:
+        """ Vrati info o objektu v html podobe """
+
+        out = ('&nbsp;&nbsp;<i>WirelessVirt:</i> {} <br>'
+               '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
+               '|-{} {}<br>').format(self.essid, self.mode, str(self.master))
         return out
 
-    def print(self):
+    def print(self) -> NoReturn:
+        """ Vytiskne info o objektu """
+
         print('|  |  |-{} mode: {}'.format(self.essid, self.mode, ))
 
 
-class Arp(object):
+class Arp:
+    """ Objekt predstavuje radek z ARP tabulky interfejsu """
 
     def __init__(self):
         self.parent = None
-        self.ip = None
+        self.ipaddr = None
         self.mac = None
         self.manufacturer = None
 
     def __str__(self):
-        return self.ip
+        return self.ipaddr
 
     def get_html_dev_info(self):
-        out = '&nbsp;&nbsp;&nbsp;|-<span title="{}">{} {}</span><br>'.format(self.manufacturer, self.ip, self.mac)
+        """ Vrati info o objektu v html podobe """
+
+        return ('&nbsp;&nbsp;&nbsp;'
+                '|-<span title="{}">{} {}</span><br>').format(self.manufacturer,
+                                                              self.ipaddr, self.mac)
+
+    def print(self):
+        """ Vytiskne info o objektu """
+
+        print('|     |-{}  \tMAC: {}  Manufacturer: {}'.format(self.ipaddr,
+                                                               self.mac, self.manufacturer))
+
+
+class Interface:
+    """ Sdruzuje informace o interfejsu, tedy jeho IP, Routy, Wireless a pod."""
+
+    def __init__(self):
+        self.parent = None
+        self.name = None
+        self.mac = None
+        self.mtu = None
+        self.state = None
+        self.layers = {'ipaddr': dict(), 'route': dict(), 'wireless': None,
+                       'wireless_virt': None, 'arp': dict()}
+        # self.ipaddr = dict()
+        # self.route = dict()
+        # self.wireless = None
+        # self.wireless_virt = None
+        # self.arp = dict()
+
+    def __str__(self):
+        return self.name
+
+    def add_ip(self, objectitem):
+        """ Prida objekt IP do slovniku interfejsu """
+
+        self.layers['ipaddr'][str(objectitem)] = objectitem
+
+    def add_route(self, objectitem):
+        """ Prida objekt Route do slovniku interfejsu """
+
+        self.layers['route'][str(objectitem)] = objectitem
+
+    def add_arp(self, objectitem):
+        """ Prida objekt ARP do slovniku interfejsu """
+
+        self.layers['arp'][str(objectitem)] = objectitem
+
+    def add_wireless(self, objectitem):
+        """ Prida objekt Wireless do slovniku interfejsu """
+
+        self.layers['wireless'] = objectitem
+
+    def add_wireless_virt(self, objectitem):
+        """ Prida objekt Wireless_virt do slovniku interfejsu """
+
+        self.layers['wireless_virt'] = objectitem
+
+    def get_html_dev_info(self):
+        """ Vrati informace o interfejsu v html podobe """
+
+        out = '<b>{}</b> - {} {} {}<br>'.format(self.name, self.mac, self.mtu, self.state)
+        if self.layers['ipaddr']:
+            out += '&nbsp;&nbsp;<i>IP:</i><br>'
+            for item in self.layers['ipaddr']:
+                out += self.layers['ipaddr'][item].get_html_dev_info()
+        if self.layers['route']:
+            out += '&nbsp;&nbsp;<i>Route:</i><br>'
+            for item in self.layers['route']:
+                out += self.layers['route'][item].get_html_dev_info()
+        if self.layers['wireless']:
+            out += self.layers['wireless'].get_html_dev_info()
+        if self.layers['wireless_virt']:
+            out += self.layers['wireless_virt'].get_html_dev_info()
+        if self.layers['arp']:
+            out += '&nbsp;&nbsp;<i>ARP:</i><br>'
+            for item in self.layers['arp']:
+                out += self.layers['arp'][item].get_html_dev_info()
         return out
 
     def print(self):
-        print('|     |-{}  \tMAC: {}  Manufacturer: {}'.format(self.ip, self.mac, self.manufacturer))
+        """ Vytiskne informace o interfejsu """
+
+        print('|  ')
+        print('|-{}'.format(self.name))
+        print('|  |-MAC: {}  MTU: {}  State: {}'.format(self.mac, self.mtu, self.state))
+
+        if self.layers['ipaddr']:
+            print('|  |')
+            print('|  |-IP:')
+            for item in self.layers['ipaddr']:
+                self.layers['ipaddr'][item].print()
+
+        if self.layers['route']:
+            print('|  |')
+            print('|  |-Route:')
+            for item in self.layers['route']:
+                self.layers['route'][item].print()
+
+        if self.layers['wireless']:
+            print('|  |')
+            print('|  |-Wireless:')
+            self.layers['wireless'].print()
+
+        if self.layers['wireless_virt']:
+            print('|  |')
+            print('|  |-Wireless virtual:')
+            self.layers['wireless_virt'].print()
+
+        if self.layers['arp']:
+            print('|  |')
+            print('|  |-Arp:')
+            for item in self.layers['arp']:
+                self.layers['arp'][item].print()
+
+
+class Bridge:
+    """ Objekt sdruzuje informace o bridgi """
+
+    def __init__(self):
+        self.parent = None
+        self.bridge = Interface
+        self.interface = {}
+
+    def __str__(self):
+        return str(self.bridge)
+
+    def add_interface(self, objectitem):
+        """ Prida port bridge (interfejs) do slovniku"""
+
+        self.interface[str(objectitem)] = objectitem
+
+    def get_html_dev_info(self):
+        """ Vrati informace o bridgi v html podobe """
+
+        out = '<b>{}</b> ports: {}<br>'.format(self.bridge, ', '.join(self.interface.keys()))
+        return out
+
+    def print(self):
+        """ Vytiskne informace o bridgi """
+
+        print('|  ')
+        print('|--Bridge: {}'.format(self.bridge))
+        print('|  |-Interfaces: {}'.format(', '.join(self.interface.keys())))
+
+
+class GenericDevice(scanobjects.Ping):  # pylint: disable-msg=too-many-instance-attributes
+    """ Objekt predstavujici obecne zarizeni, tedy takove ke kteremu se numime pripojit a
+    ziskat jeho data. Informace o tomto zarizeni byla ziskana skenem, nebo vyplivaji z informaci
+    o siti zjistenych. """
+
+    def __init__(self):
+        scanobjects.Ping.__init__(self)
+        self.parent = None
+        self.ipaddr = None
+        self.uuid = str(uuid.uuid4())
+        self.operating_system = None  # Other, Linux, Windows, AirOS, IOS, RouterOS
+        self.os_info = ''
+        self.device = ''  # Other, Cisco, Mikrotik, UBNT, PC, Printer
+        self.device_info = ''
+        self.active = False
+        self.active_ports = list()
+        self.errors = list()
+        self.infrastructure_device = False
+        self.default_route = None
+
+    def get_html_info(self):
+        """ Vrati informace o obecnem zarizeni v html podobe """
+
+        out = ('<ul><li>ip: <a href="http://{0}" target="_blank">{0}</a></li>'
+               '<li>device: {1}</li>'
+               '<li>device-info: {3}</li>'
+               '<li>os: {2}</li>'
+               '<li>os-info: {4}</li>'
+               '').format(self.ipaddr, self.device, self.operating_system, self.device_info,
+                          self.os_info)
+        if self.active_ports:
+            out += '<li>open ports:<ul>'
+            for port in self.active_ports:
+                out += port.get_html_info()
+            out += '</ul></li>'
+        out += '</ul>'
+        return out
+
+
+class Device(GenericDevice):
+    """ Objekt reprezentujici zarizeni a sdruzujici jeho interfejsy, adresy, routy a pod. """
+
+    def __init__(self, account: dict, host: dict):
+        GenericDevice.__init__(self)
+        self.hostname = host['hostname']
+        self.uid = host['uid']
+        self.firmware = host['firmware']
+        self.model = host['model']
+        self.account = account
+        self.interface = dict()
+        self.bridge = dict()
+
+    def __str__(self):
+        return self.hostname + ' - ' + self.model
+
+    def add_interface(self, objectitem):
+        """ Prida interfejs do seznamu v zarizeni """
+
+        self.interface[str(objectitem)] = objectitem
+
+    def add_bridge(self, objectitem):
+        """ Prida objek bridge do seznamu v zarizeni """
+
+        self.bridge[str(objectitem)] = objectitem
+
+    def get_default_route(self) -> Union[Route, None]:
+        """" Vrati defaultni routu zarizeni, pokud existuje """
+
+        for int_key in self.interface:
+            for route_key in self.interface[int_key].layers['route']:
+                if self.interface[int_key].layers['route'][route_key].net == '0.0.0.0/0':
+                    return self.interface[int_key].layers['route'][route_key]
+        return None
+
+    def get_gateways(self) -> List:
+        """ Vrati jeden Route objekt pro kazdou branu zarizeni v seznamu """
+
+        out = list()
+        hlp = list()
+        for int_key in self.interface:
+            for route_key in self.interface[int_key].layers['route'].keys():
+                if self.interface[int_key].layers['route'][route_key].gate not in hlp:
+                    out.append(self.interface[int_key].layers['route'][route_key])
+                    hlp.append(self.interface[int_key].layers['route'][route_key].gate)
+        return out
+
+    def get_routes(self) -> List:
+        """ Vrati routy zarizeni v seznamu """
+
+        out = list()
+        for int_key in self.interface:
+            for route_key in self.interface[int_key].layers['route'].keys():
+                out.append(self.interface[int_key].layers['route'][route_key])
+        return out
+
+    def get_ips(self) -> List:
+        """ Vrati IP objeky zarizeni v seznamu """
+
+        out = list()
+        for int_key in self.interface:
+            for ip_key in self.interface[int_key].layers['ipaddr']:
+                out.append(self.interface[int_key].layers['ipaddr'][ip_key])
+        return out
+
+    def get_html_dev_info(self):
+        """ Vrati info o zarizeni v html podobe """
+
+        out = ('<h2>{}</h2>'
+               '<ul>'
+               '<li>Model: {}</li>'
+               '<li>Firmware: {}</li>'
+               '<li>Uid: {}</li>'
+               '<li>Account: {}/{}</li>'
+               '').format(self.hostname, self.model, self.firmware, self.uid,
+                          self.account['username'], self.account['password'])
+        if self.bridge:
+            out += '<li>Bridges:</li>'
+            for item in self.bridge:
+                out += self.bridge[item].get_html_dev_info()
+            out += ''
+
+        if self.interface:
+            out += '<li>Interfaces:</li>'
+            for item in self.interface:
+                out += self.interface[item].get_html_dev_info()
+            out += ''
+
+        out += '</ul>'
+        return out
+
+    def print(self):
+        """ Vytiskne info o zarizeni """
+
+        print('##################################################################################')
+        print('|==== Hostname: {}'.format(self.hostname))
+        print('|==== Model: {}, Firmware: {}, '
+              'Uid: {}, Username: {}, Password: {}'.format(self.model,
+                                                           self.firmware, self.uid,
+                                                           self.account['username'],
+                                                           self.account['password']))
+        if self.interface:
+            for item in self.interface:
+                self.interface[item].print()
+        if self.bridge:
+            for item in self.bridge:
+                self.bridge[item].print()
+
+
+class Subnet:
+    """ Udrzuje informace o subnetech jejich branach nalezenych v siti """
+
+    def __init__(self):
+        self.subnet = None
+        self.gateways = list()
+        self.main_gateway = None
+
+    def add_gateway(self, interface: Interface):
+        """ Prida interfejs reprezentujici branu v danem subnetu """
+
+        self.gateways.append(interface)
+
+    def is_ipaddr_in_subnet(self, ipaddr: str) -> bool:
+        """ Zjisti jesli predana IP patri do teto podsite """
+
+        out = False
+        if ipaddr in ipcalc.Network(self.subnet):
+            out = True
+        return out
+
+
+class ConnectionDev:
+    """ Predstavuje spoje mezi interfejsy """
+
+    def __init__(self):
+        self.name = None
+        self.conn_from = None
+        self.conn_to = None
+        self.uuid = str(uuid.uuid4())
+        self.category = None  # default, local, wireless, ethernet
+        self.count = None
+
+    def get_dev_from(self) -> Union[str, None]:
+        """ Vrati jedinecny identifikator vychoziho zarizeni """
+
+        out = None
+        if isinstance(self.conn_from, Interface):
+            out = self.conn_from.parent
+        if isinstance(self.conn_from, GenericDevice):
+            out = self.conn_from
+        if isinstance(self.conn_from, Device):
+            out = self.conn_from
+        if isinstance(self.conn_from, Wireless):
+            out = self.conn_from.parent.parent
+        if isinstance(self.conn_from, WirelessVirtual):
+            out = self.conn_from.parent.parent
+        return out
+
+    def get_dev_to(self) -> Union[str, None]:
+        """ Vrati jedinecny identifikator ciloveho zarizeni """
+
+        out = None
+        if isinstance(self.conn_to, Interface):
+            out = self.conn_to.parent
+        if isinstance(self.conn_to, GenericDevice):
+            out = self.conn_to
+        if isinstance(self.conn_to, Device):
+            out = self.conn_to
+        if isinstance(self.conn_to, Wireless):
+            out = self.conn_to.parent.parent
+        if isinstance(self.conn_to, WirelessVirtual):
+            out = self.conn_to.parent.parent
+        return out
+
+
+class Network:
+    """ Sdruzuje vsechny sitove objekty """
+
+    def __init__(self, network: str = None):
+        self.network = network
+        self.devices = list()
+        self.duplicate_device = list()
+        self.subnets = list()
+        self.connections = list()
+
+    def add_device(self, objectitem):
+
+        """ Prida zarizeni """
+
+        self.devices.append(objectitem)
+
+    def add_duplicate_device(self, objectitem):
+        """ Prida zarizeni pokud bylo oznaceno jako duplikat
+        - kontrolni seznam vyrazenych z nacitani"""
+
+        self.duplicate_device.append(objectitem)
+
+    def add_subnet(self, objectitem: Subnet):
+        """ Prida subnet do seznamu """
+
+        self.subnets.append(objectitem)
+
+    def add_connection(self, objectitem: ConnectionDev):
+        """ Prida subnet do seznamu """
+
+        self.connections.append(objectitem)
+
+    def find_interface_by_ip(self, ipadr: str) -> Union[Interface, None]:
+        """ Pro zadanou IP najde v siti ji odpovidajici interfejs pokud existuje """
+
+        iface = None
+        for device in self.devices:
+            if isinstance(device, Device):
+                for interface_key in device.interface:
+                    for ip_key in device.interface[interface_key].layers['ipaddr']:
+                        if ipadr == device.interface[interface_key].layers['ipaddr'][ip_key].ipaddr:
+                            iface = device.interface[interface_key]
+        return iface
+
+    def get_uid_list(self) -> List[str]:
+        """ Vrati seznam jedinecnych identifikatoru nactenych ze zarizeni v siti """
+
+        uid_list = list()
+        for device in self.devices:
+            if isinstance(device, Device):
+                uid_list.append(device.uid)
+        return uid_list
+
+    def get_dev_ip_list(self) -> List[str]:
+        """ Vrati seznam ip pro pripojeni vsech zarizeni v siti """
+
+        return [device.ipaddr for device in self.devices]
+
+    def get_dev_by_uuid(self, uuidh: str) -> Union[Device, GenericDevice, None]:
+        """ Vrati zarizeni podle jedinecneho identifikatoru """
+
+        devout = None
+        for dev in self.devices:
+            if dev.uuid == uuidh:
+                devout = dev
+        return devout
+
+    def get_ips_same_net(self, ipaddr: str) -> List[Any]:
+        """ Vrati objekty IP z cele site, ktere patri do zadaneho subnetu """
+
+        out = list()
+        for device in self.devices:
+            if isinstance(device, Device):
+                for ip_item in device.get_ips():
+                    if ipaddr in ipcalc.Network('{}/{}'.format(ip_item.ipaddr, ip_item.mask)):
+                        out.append(ip_item)
+        return out
+
+    def get_ips(self) -> List[Ip]:
+        """ Vrati vsechny objekty IP v siti """
+
+        out = list()
+        for device in self.devices:
+            if isinstance(device, Device):
+                for ip_item in device.get_ips():
+                    out.append(ip_item)
+        return out
+
+    def get_default_routes(self):
+        """ Vrati seznam defaultnich rout z cele site """
+
+        return [device.get_default_route() for device in self.devices if
+                isinstance(device, Device) and device.get_default_route()]
+
+    def get_routes(self):
+        """ Vrati seznam rout z cele site """
+
+        out = list()
+        for device in self.devices:
+            if isinstance(device, Device):
+                out += device.get_routes()
+        return out
+
+    def get_subnets(self) -> List[str]:
+        """ Vrati seznam subnet jako seznam jejich nazvu"""
+
+        return [subnet.subnet for subnet in self.subnets]
+
+    def get_subnet_by_name(self, subnet: str) -> Union[Subnet, None]:
+        """ Vrati objekt subnet odpovidajici nazvu, tedy textovenu zapisu rozsahu podsite """
+
+        subnetout = None
+        for subnet_obj in self.subnets:
+            if subnet_obj.subnet == subnet:
+                subnetout = subnet_obj
+        return subnetout
+
+    def create_subnets(self):
+        """ Podle ip adres interfejsu paternich zarizeni vytvori Subnet objekty, tedy seznam
+        v siti pouzitych adresnich rozsahu """
+
+        for device in self.devices:
+            if device.infrastructure_device and isinstance(device, Device):
+                for ip_addr in device.get_ips():
+                    subnet_str = str(ipcalc.Network('{}/{}'.format(ip_addr.ipaddr,
+                                                                   ip_addr.mask)).guess_network())
+                    # Pokud tato subnet jeste neexistuje, tak vytvorime novou
+                    if subnet_str not in self.get_subnets():
+                        subnet_new = Subnet()
+                        subnet_new.subnet = subnet_str
+                        subnet_new.add_gateway(ip_addr.parent)
+                        self.add_subnet(subnet_new)
+                    # Pokud existuje, tak do ni pridame dalsi branu
+                    else:
+                        subnet = self.get_subnet_by_name(subnet_str)  # vyhleda objekt
+                        print(subnet_str)
+                        print(subnet)
+                        # Pokud interface jeste neni v seznamu bran, tak ho prida
+                        if subnet and ip_addr.parent not in subnet.gateways:
+                            print(ip_addr.parent)
+                            subnet.gateways.append(ip_addr.parent)
+        self.set_main_gw_for_subnets()
+
+    def set_main_gw_for_subnets(self):
+        """ Nastavi pro kazdy subnet main_gateway, tedy tu branu,
+        ktera se v nem pouziva jako defaultni """
+
+        for subnet in self.subnets:
+            for def_route in self.get_default_routes():
+                if def_route.gate in ipcalc.Network(subnet.subnet):
+                    subnet.main_gateway = self.find_interface_by_ip(def_route.gate)
+            # Pokud nenašel vhodnou branu z default rout, tak ji nahradi prvni branou
+            # z bran v teto podsiti
+            if not subnet.main_gateway:
+                if subnet.gateways:
+                    subnet.main_gateway = subnet.gateways[0]
+
+    def find_infrastructure_devices(self):
+        """ Najde vsechny routy v siti a podle jejich bran vyhleda zarizeni, ktera oznaci jako
+          soucast paterni sitove infrastruktury"""
+
+        gateways = set()
+        for route in self.get_routes():
+            # Overi, ze to neni lokalni routa interfejsu
+            if route.parent != self.find_interface_by_ip(route.gate):
+                gateways.add(route.gate)
+        for gate in gateways:
+            iface = self.find_interface_by_ip(gate)
+            if iface:
+                iface.parent.infrastructure_device = True
+
+    def create_connection_route(self):
+        """ Podle rout vytvori spojeni predstavujici propojeni jednotlivych zarizeni"""
+
+        for device in self.devices:
+            count = 2
+            if isinstance(device, Device):
+                for route in device.get_routes():
+                    remote_iface = self.find_interface_by_ip(route.gate)
+                    if remote_iface:
+                        conn = ConnectionDev()
+                        conn.conn_from = route.parent
+                        conn.conn_to = remote_iface
+                        conn.name = route.net
+                        conn.count = count
+                        # Pro defaultni routu
+                        if route.net == '0.0.0.0/0':
+                            conn.category = 'default-route'
+                        # pro ostatni routy
+                        else:
+                            conn.category = 'route'
+                        self.add_connection(conn)
+                        count += 1
+            # Pro genericka zarizeni pouzijeme odhadnutou branu
+            if isinstance(device, GenericDevice):
+                if device.default_route:
+                    conn = ConnectionDev()
+                    conn.conn_from = device
+                    conn.conn_to = device.default_route.parent
+                    conn.name = '0.0.0.0/0'
+                    conn.count = count
+                    conn.category = 'default-route'
+                    self.add_connection(conn)
+
+    def connect_generic_devs(self):
+        """ Podle prislusnosti do podsite urci branu pro genericke zarizeni """
+
+        for dev in self.devices:
+            if isinstance(dev, GenericDevice):
+                for sub in self.subnets:
+                    if sub.is_ipaddr_in_subnet(dev.ipaddr):
+                        dev.default_route = sub.main_gateway
