@@ -3,5 +3,6 @@
   <component name="PylintConfigService">
     <option name="customPylintPath" value="$USER_HOME$/.local/share/virtualenvs/NetMon-tBI76LBK/lib/python3.6/site-packages/pylint" />
     <option name="pylintrcPath" value="$PROJECT_DIR$/pylintrc" />
+    <option name="scanBeforeCheckin" value="false" />
   </component>
 </project>
