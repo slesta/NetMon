@@ -62,7 +62,7 @@ class TestScanNetwork(unittest.TestCase):
 
     @patch('scanobjects.ScanNetwork.scan_ips.create_ipobject')
     def test_scan_ips(self, mocked_fnc):
-        """ Otestuje pripravenost dat na skenovani - load_net_config() """
+        """ Oskenovani IP do IPobjektu - scan_ips() """
 
         self.scan_net.scan_ips()
         print("mocked function called: {c}".format(c=mocked_fnc.called))
