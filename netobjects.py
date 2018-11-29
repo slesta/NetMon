@@ -642,6 +642,33 @@ class Network:
                             subnet.gateways.append(ip_addr.parent)
         self.set_main_gw_for_subnets()
 
+    # TODO: tohle dodelat aby to fachalo v RDK
+    def create_subnets_generics(self):
+        """ Podle ip adres interfejsu paternich zarizeni vytvori Subnet objekty, tedy seznam
+        v siti pouzitych adresnich rozsahu """
+
+        for device in self.devices:
+            if device.infrastructure_device and isinstance(device, Device):
+                for ip_addr in device.get_ips():
+                    subnet_str = str(ipcalc.Network('{}/{}'.format(ip_addr.ipaddr,
+                                                                   ip_addr.mask)).guess_network())
+                    # Pokud tato subnet jeste neexistuje, tak vytvorime novou
+                    if subnet_str not in self.get_subnets():
+                        subnet_new = Subnet()
+                        subnet_new.subnet = subnet_str
+                        subnet_new.add_gateway(ip_addr.parent)
+                        self.add_subnet(subnet_new)
+                    # Pokud existuje, tak do ni pridame dalsi branu
+                    else:
+                        subnet = self.get_subnet_by_name(subnet_str)  # vyhleda objekt
+                        print(subnet_str)
+                        print(subnet)
+                        # Pokud interface jeste neni v seznamu bran, tak ho prida
+                        if subnet and ip_addr.parent not in subnet.gateways:
+                            print(ip_addr.parent)
+                            subnet.gateways.append(ip_addr.parent)
+        self.set_main_gw_for_subnets()
+
     def set_main_gw_for_subnets(self):
         """ Nastavi pro kazdy subnet main_gateway, tedy tu branu,
         ktera se v nem pouziva jako defaultni """
@@ -665,10 +692,17 @@ class Network:
             # Overi, ze to neni lokalni routa interfejsu
             if route.parent != self.find_interface_by_ip(route.gate):
                 gateways.add(route.gate)
+
         for gate in gateways:
             iface = self.find_interface_by_ip(gate)
+            # Pro nactena zarizeni
             if iface:
                 iface.parent.infrastructure_device = True
+            # Pro genericka zarizeni
+            else:
+                gen_device = self.find_generic_by_ip(gate)
+                if gen_device:
+                    gen_device.infrastructure_device = True
 
     def create_connection_route(self):
         """ Podle rout vytvori spojeni predstavujici propojeni jednotlivych zarizeni"""
@@ -711,3 +745,13 @@ class Network:
                 for sub in self.subnets:
                     if sub.is_ipaddr_in_subnet(dev.ipaddr):
                         dev.default_route = sub.main_gateway
+
+    def find_generic_by_ip(self, ipadr: str) -> GenericDevice:
+        """ Najde genericke zarizeni podle jeho IP """
+
+        out = None
+        for dev in self.devices:
+            if isinstance(dev, GenericDevice):
+                if dev.ipaddr == ipadr:
+                    out = dev
+        return out

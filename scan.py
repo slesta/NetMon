@@ -39,6 +39,9 @@ def main():
     # Zaloguje vsechna vytvorena spojeni
     for conn in saved_devices.network.connections:
         LOGGER.info('%s - %s %s %s', conn.conn_from, conn.conn_to, conn.name, type(conn.conn_from))
+    print('')
+    print('Found {} subnets.'.format(len(saved_devices.network.subnets)))
+    print('Created {} connections.'.format(len(saved_devices.network.connections)))
     #  Z naskenovanych dat udela sitovy graf
     netgraph.Graf(saved_devices.network)
     #  Spusti webserver s prezentaci vysledku skenovani

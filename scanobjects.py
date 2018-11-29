@@ -90,7 +90,7 @@ class IpObject(Ping):
         self.os_info = ''
         self.device = ''  # Other, Cisco, Mikrotik, UBNT, PC, Printer
         self.device_info = ''
-        self.run()
+        # self.run()
 
     def run(self):
         """ Pingne, naskenuje a zkusi rozpoznat zarizeni """
@@ -209,6 +209,11 @@ class ScanNetwork:
         self.ip_objects_active = list()  # Naskenovane objekty aktivni
         self.ip_objects_nonactive = list()  # Naskenovane objekty neaktivni
         self.accounts = None  # Ucty pro prihlaseni na zarizeni
+        # self.load_net_config()  # Nalouduje site ke skenovani
+        # self.scan_ips()
+        # self.save_to_file()
+
+    def run_scan(self):
         self.load_net_config()  # Nalouduje site ke skenovani
         self.scan_ips()
         self.save_to_file()
