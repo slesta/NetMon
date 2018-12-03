@@ -31,7 +31,7 @@ def refresh_manufacturers():
 class Linux:
     """ Trida Linux ziskava data pres ssh z Linux zarizeni """
 
-    def __init__(self, ip_obj: scanobjects.IpObject, accounts: List,
+    def __init__(self, ip_obj: scanobjects.IpScan, accounts: List,
                  networkobject: netobjects.Network):
         self.manufacturers = None  # Seznam vyrobcu dle MAC
         self.accounts = accounts

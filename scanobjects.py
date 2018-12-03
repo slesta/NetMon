@@ -78,7 +78,7 @@ class PortObject:
                                      self.exinfo, self.cpe)
 
 
-class IpObject(Ping):
+class IpScan(Ping):
     """ Obsahuje informace o naskenovane IP """
 
     def __init__(self, ip: str = '127.0.0.1'):
@@ -214,6 +214,8 @@ class ScanNetwork:
         # self.save_to_file()
 
     def run_scan(self):
+        """ Spusti skenovani dle nactene konfigurace """
+
         self.load_net_config()  # Nalouduje site ke skenovani
         self.scan_ips()
         self.save_to_file()
@@ -231,39 +233,46 @@ class ScanNetwork:
             raise Exception("Network name doesn't exist. Check network_to_scan.json"
                             " configuration file.")
 
+    @staticmethod
+    def create_ipobject(ipaddr: str) -> IpScan:
+        """Vytvori novy IP objekt"""
+
+        return IpScan(ip=ipaddr)
+
+    @staticmethod
+    def clean_non_active(ip_ob: IpScan) -> IpScan:
+        """ Vraci pouze aktivni zarizeni """
+
+        out = None
+        if ip_ob.active:
+            out = ip_ob
+        return out
+
+    @staticmethod
+    def clean_active(ip_ob: IpScan) -> IpScan:
+        """ Vraci pouze neaktivni zarizeni """
+
+        out = None
+        if not ip_ob.active:
+            out = ip_ob
+        return out
+
     def scan_ips(self):
         """ Spusti sken IP ve vlaknech"""
-
-        def create_ipobject(ipaddr: str) -> IpObject:
-            """Vytvori novy IP objekt"""
-
-            return IpObject(ip=ipaddr)
-
-        def clean_non_active(ip_ob: IpObject) -> IpObject:
-            out = None
-            if ip_ob.active:
-                out = ip_ob
-            return out
-
-        def clean_active(ip_ob: IpObject) -> IpObject:
-            out = None
-            if not ip_ob.active:
-                out = ip_ob
-            return out
 
         hlp_ip_obj_list = list()
         pool = Pool(24)  # Vytvori pool o danem poctu vlaken
         # Vytvori IP objekty z daneho seznamu adres a zobrazi progress bar
         text = 'Scanning network'
-        for item in tqdm.tqdm(pool.imap_unordered(create_ipobject, self.ips_to_scan),
+        for item in tqdm.tqdm(pool.imap_unordered(self.create_ipobject, self.ips_to_scan),
                               total=len(self.ips_to_scan), desc=text, unit='device'):
             hlp_ip_obj_list.append(item)
         pool.close()  # Udelame poradek
         pool.join()
 
         self.ip_objects = list(hlp_ip_obj_list)
-        self.ip_objects_active = list(filter(clean_non_active, self.ip_objects))
-        self.ip_objects_nonactive = list(filter(clean_active, self.ip_objects))
+        self.ip_objects_active = list(filter(self.clean_non_active, self.ip_objects))
+        self.ip_objects_nonactive = list(filter(self.clean_active, self.ip_objects))
         print('')
         print('Scan found {} active devices on the network.'.format(len(self.ip_objects_active)))
         print('')

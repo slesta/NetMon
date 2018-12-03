@@ -50,7 +50,7 @@ class Connect:
     def connect_linux(self):
         """ Nacte Linux zarizeni """
 
-        def connect(ip_obj: scanobjects.IpObject) -> linux.Linux:
+        def connect(ip_obj: scanobjects.IpScan) -> linux.Linux:
             return linux.Linux(ip_obj, self.scan_net.accounts, self.network)
 
         hlp_list = list()
@@ -91,7 +91,7 @@ class Connect:
     def connect_mikrotik(self):
         """ Nacte Mikrotik zarizeni """
 
-        def connect(ip_obj: scanobjects.IpObject) -> mikrotik.Mikrotik:
+        def connect(ip_obj: scanobjects.IpScan) -> mikrotik.Mikrotik:
             return mikrotik.Mikrotik(ip_obj, self.scan_net.accounts, self.network)
 
         hlp_list = list()

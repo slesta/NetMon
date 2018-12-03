@@ -58,11 +58,45 @@ class TestScanNetwork(unittest.TestCase):
                 "password": "secret"
             }
         ]
-        self.assertEqual(self.scan_net.accounts, expected, 'Nebylz nacteny uzivatelske ucty!')
+        self.assertEqual(self.scan_net.accounts, expected, 'Nebyly nacteny uzivatelske ucty!')
 
-    @patch('scanobjects.ScanNetwork.scan_ips.create_ipobject')
-    def test_scan_ips(self, mocked_fnc):
-        """ Oskenovani IP do IPobjektu - scan_ips() """
 
+
+    @patch('scanobjects.load_json', name='load_json')
+    @patch('scanobjects.ScanNetwork.create_ipobject', name='create_ipobject')
+    def test_scan_ips(self, mocked_create_ipobj, mocked_json_load):
+        """ Oskenovani IP do IpScanu - scan_ips() """
+
+        def crt_ip_hndl(ipaddr: str) -> scanobjects.IpScan:
+            """ Vytvori jakoby naskenovany IpScan """
+
+            out = scanobjects.IpScan(ip=ipaddr)
+            out.active = True
+            return out
+
+        mocked_create_ipobj.side_effect = crt_ip_hndl
+        mocked_json_load.return_value = {
+            "TestNetwork": {
+                "networks": [
+                    "10.0.0.1/32",
+                    "10.0.0.2/32",
+                    "192.168.0.1/32"
+                ],
+                "accounts": [
+                    {
+                        "username": "admin",
+                        "password": "secret"
+                    },
+                    {
+                        "username": "root",
+                        "password": "secret"
+                    }
+                ]
+            }
+        }
+
+        self.scan_net.load_net_config()
         self.scan_net.scan_ips()
-        print("mocked function called: {c}".format(c=mocked_fnc.called))
+        print("mocked function called: {c}".format(c=mocked_create_ipobj.called))
+        self.assertEqual(len(self.scan_net.ip_objects_active), 3, 'Spatne prirazene aktivni IP!')
+
