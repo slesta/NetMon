@@ -98,6 +98,7 @@ class IpScan(Ping):
         # Nalouduje definice pro identifikaci ruznych sitovych zarizeni
         config = load_json('config.json')
         self.ping(self.ipaddr)
+        self.active = self.pingable
         self.scan_nmap(config['ports_to_scan'])
         self.detect_device(config['detect'])
 
@@ -237,7 +238,9 @@ class ScanNetwork:
     def create_ipobject(ipaddr: str) -> IpScan:
         """Vytvori novy IP objekt"""
 
-        return IpScan(ip=ipaddr)
+        out = IpScan(ip=ipaddr)
+        out.run()
+        return out
 
     @staticmethod
     def clean_non_active(ip_ob: IpScan) -> IpScan:
