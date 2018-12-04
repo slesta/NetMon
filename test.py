@@ -119,6 +119,7 @@ class TestIpScan(unittest.TestCase):
 
     @patch('scanobjects.nmap.PortScanner', name='nmap_scan')
     def test_nmap_scan(self, nmap_scan_mock):
+        """test skenovani portu nmapem a vytvoreni objektu port v IpScan"""
 
         nmap_scan_mock.return_value.scan.return_value = {'nmap': {
             'command_line': 'nmap -oX - -p 20,21,22,25,53,67,68,80,88,110,111,135,139,143,161,389,443,445,464,465,548,587,593,636,993,995,1024,1110,2000,2049,3128,3268,3269,3389,5357,8291,8080,8888,14000, -sV 127.0.0.1',
@@ -146,7 +147,8 @@ class TestIpScan(unittest.TestCase):
         self.assertEqual(self.ip_scan.active, True, 'Problem s nmap scannem (active nenastaveno)!')
         self.assertEqual(len(self.ip_scan.active_ports), 4, 'Nmap scan nenacetl vsechny porty!')
         self.assertEqual(self.ip_scan.active_ports[0].name, 'ssh', 'Nmap scan nenacetl port name!')
-        self.assertEqual(self.ip_scan.active_ports[0].state, 'open', 'Nmap scan nenacetl port state!')
+        self.assertEqual(self.ip_scan.active_ports[0].state, 'open',
+                         'Nmap scan nenacetl port state!')
         self.assertEqual(self.ip_scan.active_ports[0].port, 22, 'Nmap scan nenacetl port!')
         self.assertEqual(self.ip_scan.active_ports[0].product, 'OpenSSH',
                          'Nmap scan nenacetl port product!')
@@ -157,3 +159,35 @@ class TestIpScan(unittest.TestCase):
         self.assertEqual(self.ip_scan.active_ports[0].cpe, 'cpe:/o:linux:linux_kernel',
                          'Nmap scan nenacetl port cpe!')
 
+    @patch('scanobjects.nmap.PortScanner', name='nmap_scan')
+    def test_detect_device(self, nmap_scan_mock):
+        """test detekce zarizeni a OS dle naskenovanych dat"""
+
+        nmap_scan_mock.return_value.scan.return_value = {'nmap': {
+            'command_line': 'nmap -oX - -p 20,21,22,25,53,67,68,80,88,110,111,135,139,143,161,389,443,445,464,465,548,587,593,636,993,995,1024,1110,2000,2049,3128,3268,3269,3389,5357,8291,8080,8888,14000, -sV 127.0.0.1',
+            'scaninfo': {'tcp': {'method': 'connect',
+                                 'services': '20-22,25,53,67-68,80,88,110-111,135,139,143,161,389,443,445,464-465,548,587,593,636,993,995,1024,1110,2000,2049,3128,3268-3269,3389,5357,8080,8291,8888,14000'}},
+            'scanstats': {'timestr': 'Tue Dec  4 10:49:45 2018', 'elapsed': '83.56', 'uphosts': '1',
+                          'downhosts': '0', 'totalhosts': '1'}}, 'scan': {
+            '127.0.0.1': {'hostnames': [{'name': 'localhost', 'type': 'PTR'}],
+                          'addresses': {'ipv4': '127.0.0.1'}, 'vendor': {},
+                          'status': {'state': 'up', 'reason': 'syn-ack'}, 'tcp': {
+                    22: {'state': 'open', 'reason': 'syn-ack', 'name': 'ssh', 'product': 'OpenSSH',
+                         'version': '7.6p1 Ubuntu 4ubuntu0.1',
+                         'extrainfo': 'Ubuntu Linux; protocol 2.0', 'conf': '10',
+                         'cpe': 'cpe:/o:linux:linux_kernel'},
+                    25: {'state': 'open', 'reason': 'syn-ack', 'name': 'smtp',
+                         'product': 'Postfix smtpd', 'version': '', 'extrainfo': '', 'conf': '10',
+                         'cpe': 'cpe:/a:postfix:postfix'},
+                    80: {'state': 'open', 'reason': 'syn-ack', 'name': 'http',
+                         'product': 'Apache httpd', 'version': '2.4.29', 'extrainfo': '(Ubuntu)',
+                         'conf': '10', 'cpe': 'cpe:/a:apache:http_server:2.4.29'},
+                    8888: {'state': 'open', 'reason': 'syn-ack', 'name': 'sun-answerbook',
+                           'product': '', 'version': '', 'extrainfo': '', 'conf': '3',
+                           'cpe': ''}}}}}
+        self.ip_scan.scan_nmap(self.config['ports_to_scan'])
+        self.ip_scan.detect_device(self.config['detect'])
+        self.assertEqual(self.ip_scan.operating_system, 'Linux', 'Spatne detekovan OS!')
+        self.assertEqual(self.ip_scan.device, 'PC', 'Spatne detekovano device!')
+        self.assertEqual(self.ip_scan.os_info, '7.6p1 Ubuntu 4ubuntu0.1', 'Spatne detekovano OS info!')
+        self.assertEqual(self.ip_scan.device_info, '', 'Spatne detekovano device info!')
